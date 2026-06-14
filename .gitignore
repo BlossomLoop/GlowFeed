@@ -1,0 +1,31 @@
+# ===== 真实配置（含 admin_token 与 api_key）=====
+# 只提交脱敏的 config.example.json，真实 config.json 绝不入库
+/config.json
+
+# ===== 运行时数据（抓取内容、任务、日志、简报快照）=====
+data/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+
+# ===== AI 工具运行时状态（非项目代码）=====
+.gstack/
+.superpowers/
+.claude/
+# 扁平化后旧的嵌套壳——后台 AI 任务可能按旧路径重建，挡掉防止污染仓库
+/newsradar/
+# AI 辅助开发的过程文件（规划/设计/验收草稿），非产品文档，不入仓库
+docs/superpowers/
+
+# ===== 系统 =====
+.DS_Store

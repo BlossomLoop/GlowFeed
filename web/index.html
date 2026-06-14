@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拾光 · GlowFeed</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='none' stroke='%2300FF66' stroke-width='6'/><line x1='50' y1='50' x2='85' y2='25' stroke='%2300FF66' stroke-width='6'/></svg>">
+</head>
+<body>
+<div class="crt-overlay" aria-hidden="true"></div>
+<div id="boot" class="boot-overlay" aria-hidden="true"><pre id="bootLog" class="mono"></pre></div>
+
+<div class="terminal">
+  <div class="term-titlebar">
+    <span class="term-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="term-path mono"><b>◉ glowfeed</b>&nbsp; <span id="termPath">~/digest</span></span>
+    <span class="term-status mono">
+      <svg class="radar radar-mini" id="topRadar" viewBox="0 0 40 40" aria-hidden="true">
+        <circle class="r-ring" cx="20" cy="20" r="17"/>
+        <g class="sweep"><path d="M20 20 L20 3 A17 17 0 0 1 32 8 Z"/></g>
+        <circle class="blip" cx="28" cy="13" r="2.2"/>
+      </svg>
+      <span class="clock" id="clock">--:--:--</span>
+      <span class="status-line"> · 侦听 <span id="taskCount">0</span> 任务</span>
+    </span>
+  </div>
+  <div class="term-body">
+    <nav class="sidebar">
+      <div class="side-brand">
+        <span class="name mono" data-text="GLOWFEED">GLOWFEED</span>
+        <span class="ver mono">v0 · <b>online</b></span>
+      </div>
+      <div class="side-nav">
+        <button class="tab active" data-view="digest">简报</button>
+        <button class="tab" data-view="feed">情报流</button>
+        <button class="tab" data-view="trending">趋势</button>
+        <button class="tab admin-only" data-view="tasks">任务</button>
+        <button class="tab admin-only" data-view="runs">日志</button>
+        <button class="tab admin-only" data-view="settings">设置</button>
+      </div>
+      <div class="side-legend">
+        <div class="lh mono">── SOURCES ──</div>
+        <div class="legend-item"><span class="dot" style="--src-color:#C8843A"></span>Hacker News</div>
+        <div class="legend-item"><span class="dot" style="--src-color:#5A93A8"></span>Bing</div>
+        <div class="legend-item"><span class="dot" style="--src-color:#C06058"></span>微博</div>
+        <div class="legend-item"><span class="dot" style="--src-color:#5A82B0"></span>百度</div>
+        <div class="legend-item"><span class="dot" style="--src-color:#5A92AE"></span>36氪</div>
+        <div class="legend-item"><span class="dot" style="--src-color:var(--amber-dim)"></span>…更多</div>
+      </div>
+      <div class="side-status mono">
+        <div class="lh">── STATUS ──</div>
+        <span class="live">listening</span>
+      </div>
+    </nav>
+    <main class="term-output">
+  <!-- ============ 每日简报 ============ -->
+  <section id="view-digest" class="view active">
+    <div id="sysPulse" class="sys-pulse mono">
+      <div class="pulse-kpi">
+        <span class="pk-label">今日全站抓取</span>
+        <span class="pk-num" id="pkFetched" data-val="0">—</span>
+      </div>
+      <svg id="pkSpark" class="pulse-spark" viewBox="0 0 200 32" preserveAspectRatio="none" aria-hidden="true">
+        <polyline class="spark-line" points=""/>
+      </svg>
+      <div class="pulse-meta" id="pkMeta">侦听 — 任务 · — 来源</div>
+    </div>
+    <div class="toolbar">
+      <select id="digestTask" class="ctl"></select>
+      <button id="btnRefreshDigest" class="btn-amber admin-only">↻ 重新生成</button>
+      <span class="digest-hint mono">简报在每次定时任务后自动生成；此处可手动重新生成</span>
+    </div>
+    <div id="digestBody"></div>
+  </section>
+
+  <!-- ============ 情报流 ============ -->
+  <section id="view-feed" class="view">
+    <div class="toolbar">
+      <select id="feedTask" class="ctl"></select>
+      <select id="feedSource" class="ctl"><option value="">全部来源</option></select>
+      <input id="feedSearch" class="ctl grow" type="search" placeholder="在结果中搜索…">
+      <div class="sort-toggle mono">
+        <button class="sort-btn active" data-sort="score">热点</button><button class="sort-btn" data-sort="trend">趋势</button><button class="sort-btn" data-sort="time">最新</button>
+      </div>
+      <button id="btnRunNow" class="btn-amber admin-only">⚡ 立即侦听</button>
+    </div>
+    <div id="feedMeta" class="feed-meta mono"></div>
+    <div id="feed" class="feed"></div>
+    <div id="feedEmpty" class="empty hidden">
+      <div class="empty-radar"></div>
+      <p>暂无情报 — 创建侦听任务，或点击「立即侦听」</p>
+    </div>
+  </section>
+
+  <!-- ============ GitHub 趋势榜 ============ -->
+  <section id="view-trending" class="view">
+    <div class="toolbar">
+      <span class="trend-title mono">GitHub 趋势榜<span class="trend-sub">OSSInsight · 免 key</span></span>
+      <div class="sort-toggle mono" id="trendPeriod">
+        <button class="sort-btn active" data-period="today">今日</button><button class="sort-btn" data-period="week">本周</button><button class="sort-btn" data-period="month">本月</button>
+      </div>
+      <select id="trendLang" class="ctl">
+        <option value="All">全部语言</option>
+        <option>Python</option><option>JavaScript</option><option>TypeScript</option>
+        <option>Go</option><option>Rust</option><option>Java</option><option>C++</option>
+        <option>C</option><option>Swift</option><option>Kotlin</option>
+      </select>
+      <button id="btnTrendRefresh" class="btn-ghost">↻ 刷新</button>
+    </div>
+    <div id="trendMeta" class="feed-meta mono"></div>
+    <ol id="trendBody" class="trend-list"></ol>
+    <div id="trendEmpty" class="empty hidden"><p>暂无趋势数据 — OSSInsight 可能瞬时无响应，稍后点「刷新」重试</p></div>
+  </section>
+
+  <!-- ============ 任务管理 ============ -->
+  <section id="view-tasks" class="view">
+    <div class="tasks-layout">
+      <div class="task-form-card">
+        <h2 class="card-title" id="formTitle">新建侦听任务</h2>
+        <form id="taskForm">
+          <input type="hidden" id="fId">
+          <label>任务名称
+            <input id="fName" class="ctl" required placeholder="如：AI 行业动态">
+          </label>
+          <label>关键词 <span class="hint">多个用逗号分隔，命中任一即收录；留空则收录全量热榜/RSS</span>
+            <input id="fKeywords" class="ctl" placeholder="如：Claude, 大模型, AI Agent">
+          </label>
+          <label>信息源 <span class="hint">不选 = 全部启用</span></label>
+          <div id="fSources" class="source-grid"></div>
+          <label>定时方式</label>
+          <div class="sched-row">
+            <select id="fSchedType" class="ctl">
+              <option value="interval">固定间隔</option>
+              <option value="daily">每日定点</option>
+            </select>
+            <input id="fSchedInterval" class="ctl" type="number" min="5" value="60" placeholder="分钟">
+            <input id="fSchedDaily" class="ctl hidden" placeholder="如 08:00, 12:30, 20:00">
+          </div>
+          <label class="check-row"><input type="checkbox" id="fEnabled" checked> 启用定时调度</label>
+          <div class="form-actions">
+            <button type="submit" class="btn-amber" id="btnSave">保存任务</button>
+            <button type="button" class="btn-ghost hidden" id="btnCancel">取消编辑</button>
+          </div>
+          <p id="formError" class="form-error mono"></p>
+        </form>
+      </div>
+      <div class="task-list" id="taskList"></div>
+    </div>
+  </section>
+
+  <!-- ============ 模型设置 ============ -->
+  <section id="view-settings" class="view">
+    <div class="settings-card">
+      <h2 class="card-title">简报综述 · 大模型接入</h2>
+      <p class="settings-intro">
+        简报顶部的「综述」由此处配置的模型生成。可用云端 API（OpenAI 风格 / Anthropic 风格），
+        也可用本机 Ollama；选「自动」或「关闭」则无需任何 Key，回退到本地算法摘要。
+      </p>
+      <form id="settingsForm">
+        <label>接入方式
+          <select id="sProvider" class="ctl">
+            <option value="auto">自动（探测本机 Ollama，无则算法摘要）· 免 Key</option>
+            <option value="openai">OpenAI 风格 API（OpenAI / DeepSeek / Moonshot / 通义 / OneAPI…）</option>
+            <option value="anthropic">Anthropic 风格 API（Claude）</option>
+            <option value="ollama">Ollama（本地或远程）· 免 Key</option>
+            <option value="off">关闭（始终用算法摘要）· 免 Key</option>
+          </select>
+        </label>
+        <div id="sCloudFields">
+          <label>API 地址 <span class="hint" id="sBaseHint"></span>
+            <input id="sBaseUrl" class="ctl" placeholder="">
+          </label>
+          <label>模型名称
+            <input id="sModel" class="ctl" placeholder="如 gpt-4o-mini / deepseek-chat / claude-3-5-sonnet-latest">
+          </label>
+          <label id="sKeyLabel">API Key
+            <input id="sApiKey" class="ctl" type="password" placeholder="">
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-amber">保存</button>
+          <button type="button" class="btn-ghost" id="btnTestConn">测试连接</button>
+        </div>
+        <p id="settingsMsg" class="settings-msg mono"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ 执行日志 ============ -->
+  <section id="view-runs" class="view">
+    <div class="runs-table-wrap">
+      <table class="runs-table mono">
+        <thead><tr><th>#</th><th>任务</th><th>开始</th><th>状态</th><th>抓取</th><th>入库</th><th>新增</th><th>各源明细</th></tr></thead>
+        <tbody id="runsBody"></tbody>
+      </table>
+      <div id="runsEmpty" class="empty hidden"><p>暂无执行记录</p></div>
+    </div>
+  </section>
+    </main>
+  </div>
+</div>
+
+<footer class="colophon mono">
+  GLOWFEED · 零 API KEY · HN / GitHub / Bing / Reddit / 微博 / 百度 / 头条 / B站 / 36氪 / IT之家 / 少数派
+</footer>
+
+<div id="cmdk" class="cmdk-overlay hidden" aria-hidden="true">
+  <div class="cmdk-box" role="dialog" aria-label="命令面板">
+    <input id="cmdkInput" class="cmdk-input mono" placeholder="输入命令…  (↑↓ 选择 · ↵ 执行 · esc 关闭)" autocomplete="off" spellcheck="false">
+    <ul id="cmdkList" class="cmdk-list"></ul>
+  </div>
+</div>
+<div id="toast" class="toast mono"></div>
+<script src="app.js"></script>
+</body>
+</html>

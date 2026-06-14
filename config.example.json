@@ -1,0 +1,14 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "data_dir": "data"
+  },
+  "admin_token": "",
+  "llm": {
+    "provider": "auto",
+    "base_url": "",
+    "model": "",
+    "api_key": ""
+  }
+}
