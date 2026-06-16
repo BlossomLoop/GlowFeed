@@ -269,7 +269,24 @@ def list_articles(task_id=None, source=None, q=None, sort="score",
     elif sort == "trend":
         pool.sort(key=_trend_score, reverse=True)
     else:
-        pool.sort(key=lambda a: a.get("score", 0), reverse=True)
+        # 热点：源内分桶 + 跨源轮转混合，防止单一源凭绝对热度量纲（github 的 star）
+        # 或大量同分（bing 几百条并列 0.55）扎堆霸屏。各源桶内按绝对热度降序，桶间按
+        # 各自 top 分排序决定同轮先后，再逐轮跨桶取，使各源头部交错上榜。
+        buckets: dict = {}
+        for a in pool:
+            buckets.setdefault(a["source"], []).append(a)
+        order = sorted(buckets.values(),
+                       key=lambda items: max(i.get("score", 0) or 0 for i in items),
+                       reverse=True)
+        for items in order:
+            items.sort(key=lambda a: a.get("score", 0) or 0, reverse=True)
+        merged, depth = [], 0
+        while any(depth < len(items) for items in order):
+            for items in order:
+                if depth < len(items):
+                    merged.append(items[depth])
+            depth += 1
+        pool = merged
     return pool[offset:offset + limit]
 
 
