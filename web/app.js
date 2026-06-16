@@ -717,7 +717,23 @@ $$("#trendPeriod .sort-btn").forEach((b) =>
   })
 );
 $("#trendLang") && $("#trendLang").addEventListener("change", loadTrending);
-$("#btnTrendRefresh") && $("#btnTrendRefresh").addEventListener("click", loadTrending);
+// 刷新 = 强制重拉 OSSInsight（管理员专属，走带 token 的 POST）；重拉后再读新缓存渲染
+$("#btnTrendRefresh") && $("#btnTrendRefresh").addEventListener("click", async () => {
+  const btn = $("#btnTrendRefresh");
+  btn.disabled = true;
+  try {
+    await api("/api/trending/refresh", {
+      method: "POST",
+      body: { period: state.trendPeriod || "today", language: $("#trendLang") ? $("#trendLang").value : "All" },
+    });
+    await loadTrending();
+    toast("趋势榜已刷新");
+  } catch (err) {
+    toast("刷新失败：" + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $("#btnRunNow").addEventListener("click", async () => {
   const taskId = $("#feedTask").value;

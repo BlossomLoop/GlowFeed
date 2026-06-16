@@ -227,6 +227,14 @@ class Handler(BaseHTTPRequestHandler):
             snap = digest.generate_and_save(task_id)  # 同步生成（含 LLM 调用，可能较慢）
             self._json(snap if snap else {"empty": True})
             return
+        if route == "/api/trending/refresh":
+            # 趋势榜强制刷新：force=True 真正重拉 OSSInsight（耗其配额），仅管理员可调
+            # （do_POST 开头已做 _authed() 校验）。公开 GET /api/trending 仍只读缓存快照。
+            b = self._body()
+            rows = github_trending_list(b.get("period", "today"),
+                                        b.get("language") or "All", force=True)
+            self._json(rows)
+            return
         if route == "/api/settings/test":
             b = self._body()
             self._json(llm.test_connection(
