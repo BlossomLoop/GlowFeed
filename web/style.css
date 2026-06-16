@@ -825,3 +825,20 @@ body.guest .fb-btns { display: none; }
 .trend-score { color: var(--amber); }
 .trend-by { color: var(--paper-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16em; }
 .trend-loading { list-style: none; color: var(--paper-dim); font-family: var(--mono); padding: 24px 4px; }
+
+/* ---- 热门 Skill 榜 ---- */
+.trend-meta-row { display: flex; gap: 12px; color: var(--paper-mute); font-size: var(--fs-xs); margin-top: 2px; }
+.skill-delta { color: var(--amber); }
+.skill-reason { color: var(--paper-mute); margin: 2px 0 0; font-size: var(--fs-xs); }
+.skill-children { margin-top: 4px; }
+.skill-children > summary { cursor: pointer; color: var(--paper-dim); font-family: var(--mono); font-size: var(--fs-xs); }
+.skill-child-names { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.skill-child-names span { font-family: var(--mono); font-size: var(--fs-xs); color: var(--paper-mute); border: 1px solid var(--amber-dim); border-radius: 3px; padding: 1px 6px; }
+.skill-pending { list-style: none; margin-top: 10px; }
+.skill-pending > details > summary { cursor: pointer; color: var(--paper-dim); font-family: var(--mono); font-size: var(--fs-xs); }
+.skill-pending-row { color: var(--paper-mute); font-size: var(--fs-xs); padding: 3px 0; }
+.skill-pending-row span { color: var(--paper-dim); }
+.src-ok { color: #00FF66; }
+.src-stale { color: var(--amber-mid); }
+.src-ratelimited { color: #E08030; }
+.src-empty { color: var(--paper-dim); }

@@ -1,146 +1,164 @@
-# 热门 Skill 榜（Hot Skills Board）设计
+# 热门 Skill 仓库榜（Hot Skill Repos Board）设计 · v2
 
 - 日期：2026-06-16
-- 状态：待评审（设计已与用户对齐，尚未实现）
+- 状态：待评审（已纳入 Codex 对抗式审查意见，见第 10 节）
+- 定位：**准公开榜单**（对外可见、需建立排名可信度）
 - 适用项目：拾光 · GlowFeed（零依赖、零 API key 的多源资讯定时聚合系统）
+
+## 0. M0 Spike 实测结论与方案调整（2026-06-16，覆盖正文相关条目）
+
+实机验证三个外部源后据实调整（"先验证再投入"）：
+
+| 源 | 本机直连 | 实测 | 首版决策 |
+|---|---|---|---|
+| GitHub repo tree（集合展开） | ✅ | `anthropics/skills` 一次 recursive 拿 18 个 SKILL.md，`truncated:false`，core 限流 60/h | **采用**，集合展开核心来源 |
+| GitHub search | ✅ | **限流 10 次/分钟**（未认证 search API，非 core 的 60/h）；`topic:claude-code-skills` 召回混入大量 `awesome/best-practice/list` 类非真 skill | **采用**，但严控请求数 + **召回后过滤**剔除名字/topic 含 `awesome|best-practice|list|collection|cheatsheet|tutorial` 的；优先集合白名单 + tree 展开作真 skill 来源 |
+| skills.sh /trending | ✅(200) | 纯 HTML 正则**解析不出榜单**：无 `__NEXT_DATA__`/`/api`，数据藏 App Router RSC 流(`__next_f`) | **首版放弃**：抓取脆弱、维护成本高、违背零依赖/失败容忍。**installs 维度整体留 v2** |
+
+**对正文的影响（以本节为准）**：
+- 删除所有 `skillsh_trending` 采集与 `skillsh_installs` 信号；热门榜排序**仅按 GitHub stars**（独立 repo）+ 集合展开。
+- 实体 `type` 取值改为 `standalone | collection`（去掉 `skillsh`）。
+- 热门榜 period 维持「近期」一档（GitHub search 本就拿近期高星库）。
+- 预算表：GitHub search 严格 ≤ 数次/轮（受 10/min 约束）；删 skills.sh 行。
+- 飙升榜 Δ、口碑榜（不依赖 skills.sh）不受影响。
 
 ## 1. 背景与目标
 
-用户希望新增一个「类似 GitHub 趋势榜」的功能：追踪 **Claude Code / Codex 生态里热门、以及上升特别快的 Agent Skill**，并补充「博客/媒体反复推荐」的口碑视角。
-
-GlowFeed 已有一个 GitHub 趋势榜专页（`sources.github_trending_list()` 基于 OSSInsight，免 key，快照式缓存 + 每日 08:30 刷新 + 独立只读专页）。本功能复用这套成熟机制，新增针对 skill 的采集与榜单组织。
+追踪 **Claude Code / Codex 生态里热门、上升快的 Agent Skill**，并补充「博客/媒体反复推荐」的口碑视角。复用 GlowFeed 已有的趋势榜机制（`sources.github_trending_list()`：OSSInsight、免 key、快照缓存 + 每日定时刷新 + 独立只读专页）。
 
 ### 目标
-1. 一个独立「热门 Skill」专页，内部三个榜：热门榜、飙升榜、口碑榜。
-2. 全程坚持项目硬约束：**仅 Python 标准库、零 API key、失败容忍**。
-3. 复用现有快照缓存、调度、降级、LLM 综述机制，新增代码职责单一、可单测。
+1. 一个独立专页，内部三榜：热门榜、飙升榜、口碑榜。
+2. 坚持硬约束：**仅 Python 标准库、零 API key、失败容忍**。
+3. **准公开定位 → 排名口径必须可信、可解释、可区分新旧/失败状态**。
 
 ### 非目标（YAGNI）
 - 不做 skill 的安装/管理/执行（只做发现与排行）。
-- 不做用户订阅/告警/历史趋势图（首版只出当前榜单）。
-- 不做跨多语言编程语言维度切分（趋势榜已有 language 维度，skill 榜首版不切）。
-- 不接入需要付费/强制 API key 的源（SkillsMP 带 key 档暂不接）。
+- 不做用户订阅/告警/历史趋势图。
+- **首版不做 skill 级实体抽取**（不解析每个 repo 的 SKILL.md 目录树）——见第 3 节，留 v2。
+- 不接需付费/强制 key 的源（SkillsMP 带 key 档暂不接）。
 
 ## 2. 调研结论（数据源）
 
-按「能否直接喂进 GlowFeed 免 key 架构」分档：
+| 源 | 提供 | 接入 | 档位 |
+|---|---|---|---|
+| GitHub Search API（项目已用 `fetch_github`） | `topic:claude-code-skills`、`q="SKILL.md"`，按 stars + `pushed:>近期` | 复用现成代码 | ✅ 免 key 直连 |
+| OSSInsight 趋势 API（项目已用 `github_trending_list`） | 仓库级 trending score | 复用现成代码 | ✅ 免 key（**仅作可选「仓库趋势候选」，不混入飙升榜**，见 F2 处理） |
+| skills.sh `/trending`（Vercel-labs） | rank + installs（SSR HTML） | HTML 正则抓取 | ✅ 免 key（脆弱，需容错） |
+| ClaudeMarketplaces / SkillsMP / awesome-* | 更多 stars/install/精选 | 抓 HTML / 带 key / 静态清单 | 🟡 首版不接 |
 
-| 源 | 提供 | 「上升快」信号 | 接入方式 | 档位 |
+**关键判断**：外部站给的多是「存量榜」（总 stars/installs）。「上升快」需要增量/时间序列（ΔStars、ΔInstalls）——这正是 GlowFeed 作为定时快照系统的天然优势：自己存两次快照做差。
+
+## 3. 核心决策：统一 repo 粒度（回应 F1）
+
+**首版正名为「热门 Skill 仓库榜」，全程以 `owner/repo` 为唯一 canonical 实体。** 理由：skill 在现实中三种形态——独立 repo 型有自身 stars；集合型（`anthropics/skills` 一个 repo 装几十个）单个 skill 无独立 stars；纯名字型只有名字。若热门/飙升按 repo、口碑按 skill 名混排，会导致**排名不可比 + 集合型仓库系统性霸榜**（codex F1）。
+
+统一口径后：
+- 热门/飙升榜：repo 实体，指标 = repo stars/installs 及其 Δ。
+- **集合型仓库单列**：标记 `is_collection=true`，放专页内独立「📦 精选集合」区，**不混入主榜与单体竞争**。收录标准：repo 内含 ≥ N 个 SKILL.md（首版可用启发式：repo 名/topic 命中 + skills.sh 标注），N 待定（建议 ≥ 5）。
+- 口碑榜：见第 5 节，证据优先对齐到 repo；纯名字型降级到「待证实」次级区，不进主榜。
+- **v2 演进**：再做 skill 级抽取（拆集合 repo 的子 skill，repo 指标降为来源信号）。
+
+## 4. 三榜结构
+
+仿现有趋势专页，三分区（Tab），各支持 `today/week/month`（飙升榜 48h/7d/30d）：
+
+| 分区 | 问题 | 数据源 | 排序 | 主榜门槛 |
 |---|---|---|---|---|
-| GitHub Search API（项目已用 `fetch_github`） | `topic:claude-code-skills`、`q="SKILL.md"`，按 stars 排序 + `pushed:>近期` | 中（stars 存量 + 近期活跃） | 复用现成代码改 query | ✅ 免 key 直连 |
-| OSSInsight 趋势 API（项目已用 `github_trending_list`） | 仓库级 trending score（GH Archive 事件算的真趋势分） | 强（本身即增量） | 复用现成代码 + skill 过滤 | ✅ 免 key 直连 |
-| skills.sh `/trending`（Vercel-labs，跨 Claude Code/Codex/Cursor） | rank + installs（SSR 纯 HTML） | 中（installs 存量，无时间序列） | HTML 正则抓取（同 baidu/weibo 抓法） | ✅ 免 key（抓 HTML） |
-| ClaudeMarketplaces.com | 21,600+ skills，按 install/stars/votes 排序 | 中 | 抓 HTML，结构自解析 | 🟡 备选，首版不接 |
-| SkillsMP REST API | 1.7M skills，`sortBy=stars` | 无 trending 端点 | 匿名 50/天，带 key 500/天 | 🔑 首版不接 |
-| awesome-* 仓库（hesreallyhim / VoltAgent / Composio） | 静态精选清单 | 无 | 作为种子白名单（可选） | 🟡 可选 |
+| 🔥 热门榜 | 现在最火 | GitHub Search + skills.sh installs | stars/installs 存量 | repo 可解析 |
+| 🚀 飙升榜 | 最近涨最快 | 自建快照做差（**无 OSSInsight 伪装**） | repo ΔStars/ΔInstalls | history ≥ 2 天，否则显「积累中」 |
+| ⭐ 口碑榜 | 博客反复推荐 | Bing/HN → LLM 候选 + 确定性校验 | 去重后 mention_count | 命中 repo/可信目录 |
 
-关键判断：**外部站给的几乎都是「存量榜」（总 stars / 总 installs），只反映「现在火」。「上升特别快」需要增量/时间序列（ΔStars、ΔInstalls）——这正是 GlowFeed 作为定时快照系统的天然优势：自己存两次快照做差即可得到任何外部 API 都给不了的「飙升榜」。**
+**取舍：三榜并列不做综合评分**——三种信号量纲/语义不同，加权融合会把排名机制变黑箱；分开则每榜口径一句话讲清。
 
-## 3. 总体结构：一个专页，三种榜
-
-仿现有趋势专页，新增「热门 Skill」专页，内部三个分区（Tab），各支持 `today / week / month`（飙升榜为 48h / 7d / 30d）切换：
-
-| 分区 | 回答的问题 | 数据源 | 排序依据 | 实体粒度 |
-|---|---|---|---|---|
-| 🔥 热门榜 | 现在最火 | GitHub Search + skills.sh installs | stars / installs 存量 | repo |
-| 🚀 飙升榜 | 最近涨最快 | 自建快照做差，OSSInsight 兜底 | 48h/7d ΔStars、ΔInstalls | repo |
-| ⭐ 口碑榜 | 博客反复推荐 | Bing/HN 搜文章 → LLM 抽取 | 被多少篇近期文章点名 | skill 名 |
-
-**取舍：三榜并列，不做综合评分。** 三种信号（存量 / 增量 / 口碑）量纲与语义不同，加权融合会把排名机制藏进黑箱、用户无法理解排序来源；分开则每榜口径一句话讲清，也更贴近 GitHub trending 的 today/week/month 直觉。
-
-## 4. Skill 实体模型（核心难点）
-
-skill 在现实中有三种形态，**不假装都能算独立 stars**：
-1. 独立 repo 型（如 `scrapegraphai/just-scrape`）——有自身 stars。
-2. 集合型（如 `anthropics/skills`、`vercel-labs/skills` 一个 repo 装几十个 skill）——单个 skill 无独立 stars，只有所在 repo 的。
-3. 纯名字型（博客点名「用 xxx skill」，可能无链接）。
-
-处理策略：**不同榜用不同粒度**（诚实而非偷懒）——
-- 热门 / 飙升榜：**repo 粒度**（stars/installs 信号本就是 repo 级；集合型显示「`anthropics/skills` ⭐X · 含 N 个 skill」）。
-- 口碑榜：**skill 名粒度**（博客点名的是具体 skill 名，按名聚合）。
-
-统一实体（以 `owner/repo` 为主键去重合并信号）：
+统一实体：
 ```
-Skill {
-  id, name, repo, url,
-  signals: { github_stars, pushed_at, skillsh_installs, blog_mentions: [{title, url}] },
-  delta:   { stars, installs },          # 自建增量，可空
-  agents:  [claude-code, codex, cursor]  # best-effort
+SkillRepo {
+  id(owner/repo), name, url, is_collection,
+  signals: { github_stars, pushed_at, skillsh_installs, blog_mentions: [{domain, author, title, url}] },
+  delta:   { stars, installs },   # 可空
+  agents:  [claude-code, codex, cursor]
 }
 ```
-博客抽取出的名字优先用 LLM 带回的 repo 链接对齐到已有实体；对不上的，**允许「只有名字」的条目单独留在口碑榜**，不强行编造 repo。
 
-## 5. 数据流（四层）
+## 5. 数据流与关键子流程
 
 ```
-采集  github_skill_search() · ossinsight(已有) · skillsh_trending(HTML抓) · blog_mention_search(Bing/HN + LLM)
+采集  github_skill_search() · skillsh_trending(HTML) · blog_mention_search(Bing/HN+LLM)  [OSSInsight 可选候选]
   ↓
-归一  normalize → 按 owner/repo 去重合并成 Skill 实体
+归一  normalize → 按 owner/repo 去重合并；标记 is_collection
   ↓
-快照  data/skills/{board}_{period}.json (当前·页面秒读)  +  history/{date}.json (算 Δ 用)
+快照  data/skills/{board}_{period}.json (当前) + history/{date}.json (做差)
   ↓
-计算  飙升榜 = 当前快照 − 最近历史快照
+计算  飙升榜 = 当前 − 最近 history；不足 2 天 → 状态 "warming-up"
 ```
 
-### 口碑榜子流程（复用 `llm.py`）
-1. `fetch_bing` 多 query 搜（中英）：`best claude code skills`、`top codex skills`、`claude skill 推荐` 等。
-2. 拿到文章 title/url/summary。
-3. LLM 抽取 → `{skill 名, 一句推荐理由, 来源文章}` 结构化 JSON。
-4. 跨文章聚合：被 N 篇点名 → `mention_count=N` 排序。
-- 降级：模型未配置时，口碑榜退化为「文章标题正则提名」或置空提示「配置模型后启用」。
+### 飙升榜冷启动（回应 F2）
+**不再用 OSSInsight 伪装成飙升榜**（口径不一致、首屏失真、后期跳变）。改为：history < 2 天时**诚实显示「📈 历史积累中，N 天后开放」**，符合 GlowFeed「失败容忍、诚实降级」精神。OSSInsight 若保留，**单独标为「仓库趋势候选」区**（默认可关），与飙升榜物理隔离、文案明示口径不同。
 
-### 飙升榜冷启动
-首次运行无历史快照 → 飙升榜会空。解法：**用已有 OSSInsight 趋势分兜底**（它本身按事件增量算，不需自建历史）；待自建快照攒够 ≥ 2 天，再切到「真 Δ」或两者并用。
+### 口碑榜反作弊（回应 F4）
+1. `fetch_bing`/`fetch_hackernews` 多 query 搜文章（中英）。
+2. **LLM 只做候选抽取** → `{候选 skill 名/可能 repo 链接, 推荐理由, 来源 domain+author}`。
+3. **确定性校验 + canonicalization**：候选必须对齐到 GitHub repo 或可信目录命中，才能进**主榜**；对不上的进「待证实」次级区。
+4. **去重**：按 (独立 domain, author) 去重，**每域对同一 skill 的 mention 计 1**（防同站/同作者软文刷高）。
+5. 排序：去重后 mention_count。
 
-## 6. 代码落点（贴现有结构）
+## 6. 代码落点
 
 | 模块/改动 | 职责 | 依赖 |
 |---|---|---|
-| `app/skills_sources.py`（新） | 纯采集：`github_skill_search()` / `skillsh_trending()` / `blog_mention_search()`，失败返 `[]` | `http_util` |
-| `app/skills_board.py`（新） | 编排：归一去重 → 三榜计算 → 快照读写。`build_board(type, period)` / `warm_skills()` | `skills_sources`、`store`、`llm`、`sources`(借 OSSInsight) |
-| `store.py`（薄改） | `read_skills_board()` / `save_skills_board()` / `archive_skills_history()`，仿 `read_digest` | — |
+| `app/skills_sources.py`（新） | 纯采集，失败返 `[]` | `http_util` |
+| `app/skills_board.py`（新） | 归一去重 → 三榜计算 → 快照读写；`build_board()` / `warm_skills()` | `skills_sources`、`store`、`llm`、`sources`(可选 OSSInsight 候选) |
+| `store.py`（薄改） | `read_skills_board()` / `save_skills_board()` / `archive_skills_history()` | — |
 | `server.py`（薄改） | 加 2 路由 | `skills_board` |
-| `scheduler.py`（薄改） | 加 `SKILLS_REFRESH_TIMES` + 启动预热 | `skills_board` |
+| `scheduler.py`（薄改） | `SKILLS_REFRESH_TIMES` + 启动预热 | `skills_board` |
 
-边界：sources 管「怎么拿」，board 管「怎么组织成榜」，server 管「怎么暴露」——各自可单测。
-
-### 存储布局
+### 存储
 ```
-data/skills/
-  hot_today.json  rising_week.json  praise_today.json ...   # 当前快照
-  history/2026-06-16.json                                   # 每日归档，飙升榜做差
+data/skills/  hot_today.json  rising_week.json  praise_today.json ...
+data/skills/history/2026-06-16.json
 ```
 
-### HTTP 接口（仿 `/api/trending`）
+## 7. 请求预算与 staleness 语义（回应 F3）
+
+**预算闭环（一轮预热的外部请求上限）：**
+
+| 源 | 请求数 | 说明 |
+|---|---|---|
+| GitHub Search | 3–6 | 3 个 query；**period 不分别打**——一次拉足量按时间本地切 today/week/month |
+| skills.sh | 1 | `/trending` 一页 |
+| 博客（Bing+HN） | 6–8 | + LLM 抽取 1–2 次 |
+| **合计** | **~15–20** | 其中 GitHub 仅占 ~6，**远低于免 key 60 次/小时** |
+
+- **公开 GET 读快照不打外网**；只有每日 08:40 预热 + 管理员 force 才真拉。
+- **管理员 force 冷却**：同 `type` 5 分钟内不重复真拉。
+- **退避**：单源限流/失败 → 保留旧快照，标 `status`。
+
+**响应暴露状态**（每个 board）：
 ```
-GET  /api/skills/board?type=hot|rising|praise&period=today|week|month   公开·读快照
-POST /api/skills/refresh  {type?, period?}                              管理员·force 真拉
+GET /api/skills/board?type=hot|rising|praise&period=today|week|month
+→ { rows, snapshot_time, sources: [{ id, status: ok|stale|ratelimited|empty, fetched_at }] }
+POST /api/skills/refresh {type?, period?}   管理员·带冷却
 ```
+前端据 `sources[].status` 区分「新数据 / 旧快照 / 限流失败 / 空」，不让用户误把旧/失败当最新。
 
-### 调度（仿趋势榜，多一步归档）
-`SKILLS_REFRESH_TIMES=["08:40"]`（错开趋势榜 08:30，避免同时打外网）。刷新动作：拉新数据 → 存当前快照 → 与最近 history 做差算飙升 → 今日数据归档到 history/。启动预热一次。
+## 8. 调度
+`SKILLS_REFRESH_TIMES=["08:40"]`（错开趋势榜 08:30）。刷新：拉新 → 存当前 → 与最近 history 做差 → 今日归档 history/。启动预热一次。
 
-### 降级矩阵（沿用「拉空保留旧快照」原则）
-| 失败点 | 行为 |
-|---|---|
-| GitHub API 限流 | 热门榜该维度置空，其余源补；保留旧快照 |
-| skills.sh 抓取失败 | installs 维度缺失，stars 维度照常 |
-| LLM 未配置 | 口碑榜降级为标题正则提名 / 置空提示 |
-| history < 2 天（冷启动） | 飙升榜走 OSSInsight 趋势分兜底 |
+## 9. 前端 / 测试
+- 前端：仿趋势专页加「热门 Skill」view，`type` 三 Tab + 集合区 + period 下拉；顶部显示 `snapshot_time` 与各源 `status` 角标。公开只读，带 token 显示「重新生成」。
+- 测试：`skills_sources` 用录制夹具测解析与失败容忍；`skills_board` 测去重合并、三榜排序、飙升做差（构造两份 history）、冷启动 warming-up 分支、口碑去重/证据门槛；`server` 测路由鉴权与 staleness 字段。
 
-### 前端
-`web/` 仿现有趋势专页加「热门 Skill」view + 导航入口；内部 `type` 三 Tab、`period` 下拉复用趋势页组件。公开只读，带 token 显示「重新生成」。
+## 10. Codex 对抗式审查处理记录
 
-## 7. 测试策略
-- `skills_sources`：各 fetcher 用录制的样本响应（HTML/JSON 夹具）单测解析与失败容忍（返 `[]`）。
-- `skills_board`：归一去重（同 repo 多源合并）、三榜排序、飙升做差（构造两份历史快照）、冷启动兜底分支。
-- `server`：路由鉴权（公开 GET / 管理员 refresh）、参数校验。
-- 沿用项目现有 `tests/` 结构。
+| # | 严重度 | 意见 | 处理 |
+|---|---|---|---|
+| F1 | high | 不同榜不同粒度 → 不可比 + 集合霸榜 | **接受**：统一 repo 粒度、正名「仓库榜」、集合型单列；skill 级抽取留 v2（第 3 节） |
+| F2 | high | OSSInsight 兜底口径不一致 → 首屏失真/跳变 | **接受**：删除伪装，冷启动诚实显「积累中」；OSSInsight 仅作隔离的「仓库趋势候选」（第 5 节） |
+| F3 | medium | 免 key 配额无闭环 | **部分接受**：补预算表 + 冷却 + staleness 响应字段（第 7 节）；但反驳「很快空榜」——快照架构下 GitHub 仅 ~6 请求/轮 |
+| F4 | medium | 口碑榜无反作弊/校验 | **接受**：证据优先入主榜、按域名+作者去重、LLM 只做候选（第 5 节）；纯名字型留「待证实」区（保留发现冷门好 skill 的初衷） |
 
-## 8. 已知风险与未决假设（供评审 challenge）
-1. **skills.sh 是 SSR HTML，结构变更会破坏抓取**——无 API 契约保证，需容错 + 监控空榜。
-2. **本机能否直连 skills.sh / GitHub API / OSSInsight 未在实现期验证**（OSSInsight 项目注释称本机直连可用；GitHub API 免 key 有 60 次/小时限流，可能不够三榜 × 三周期刷新）。
-3. **集合型 skill 的 repo 粒度**会让 `anthropics/skills` 这类「巨型集合」长期霸榜，可能淹没真正的单体新星——是否需要对集合型降权或单列待定。
-4. **口碑榜依赖 LLM 抽取的准确性**：LLM 可能虚构 skill 名或错误归类；mention_count 易被单一作者的多篇软文刷高。
-5. **飙升榜冷启动用 OSSInsight 兜底**，但 OSSInsight 是仓库级趋势，未必能过滤出「skill 类」仓库，兜底质量存疑。
-6. **GitHub API 限流**下三榜 × 三周期的刷新预算是否够，需要实测；可能需要合并请求或降低刷新频率。
+## 11. 仍未决（首版需实测/定义）
+1. skills.sh SSR HTML 结构变更会破坏抓取——需容错 + 空榜监控告警。
+2. 本机能否直连 skills.sh / GitHub API 未验证（OSSInsight 注释称本机直连可用）。
+3. 「精选集合」收录阈值 N 与启发式判定标准待定。
+4. 口碑榜「可信目录」白名单具体包含哪些站（awesome-* / ClaudeMarketplaces 等）待定。

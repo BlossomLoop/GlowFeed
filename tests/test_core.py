@@ -154,9 +154,9 @@ class TestFeedbackStore(unittest.TestCase):
     def test_retention_prunes_old_unliked_keeps_liked(self):
         old = "2000-01-01 00:00:00"  # 远超保留期
         store_mod._write(store_mod._articles_path(1), [
-            {"url_hash": "o1", "title": "旧未赞", "url": "https://a/o1", "fetched_at": old, "score": 1},
-            {"url_hash": "o2", "title": "旧已赞", "url": "https://a/o2", "fetched_at": old, "score": 1},
-            {"url_hash": "n1", "title": "新内容", "url": "https://a/n1", "fetched_at": store_mod.now(), "score": 1},
+            {"url_hash": "o1", "title": "旧未赞", "url": "https://a/o1", "source": "baidu_hot", "fetched_at": old, "score": 1},
+            {"url_hash": "o2", "title": "旧已赞", "url": "https://a/o2", "source": "baidu_hot", "fetched_at": old, "score": 1},
+            {"url_hash": "n1", "title": "新内容", "url": "https://a/n1", "source": "baidu_hot", "fetched_at": store_mod.now(), "score": 1},
         ])
         store_mod.set_feedback(1, "o2", "https://a/o2", "旧已赞", "like")
         store_mod.add_articles(1, [])  # 仅触发裁剪
@@ -221,9 +221,9 @@ class TestTrendSort(unittest.TestCase):
 
     def test_trend_favors_fresh_over_old_hot(self):
         store_mod._write(store_mod._articles_path(1), [
-            {"url_hash": "old", "title": "旧但极热", "url": "https://a/old",
+            {"url_hash": "old", "title": "旧但极热", "url": "https://a/old", "source": "baidu_hot",
              "fetched_at": "2000-01-01 00:00:00", "engagement": 100000, "score": 1},
-            {"url_hash": "new", "title": "新且小热", "url": "https://a/new",
+            {"url_hash": "new", "title": "新且小热", "url": "https://a/new", "source": "baidu_hot",
              "fetched_at": store_mod.now(), "engagement": 10, "score": 0.1},
         ])
         trend = store_mod.list_articles(task_id=1, sort="trend", limit=10)
@@ -234,9 +234,9 @@ class TestTrendSort(unittest.TestCase):
     def test_trend_breaks_tie_by_engagement_when_same_age(self):
         ts = store_mod.now()
         store_mod._write(store_mod._articles_path(1), [
-            {"url_hash": "a", "title": "同期低热", "url": "https://a/a",
+            {"url_hash": "a", "title": "同期低热", "url": "https://a/a", "source": "baidu_hot",
              "fetched_at": ts, "engagement": 5, "score": 1},
-            {"url_hash": "b", "title": "同期高热", "url": "https://a/b",
+            {"url_hash": "b", "title": "同期高热", "url": "https://a/b", "source": "baidu_hot",
              "fetched_at": ts, "engagement": 5000, "score": 1},
         ])
         trend = store_mod.list_articles(task_id=1, sort="trend", limit=10)
