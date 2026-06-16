@@ -37,6 +37,7 @@ def init(data_dir: str, config_path: str | None = None) -> None:
     (_DATA / "articles").mkdir(parents=True, exist_ok=True)
     (_DATA / "digests").mkdir(parents=True, exist_ok=True)
     (_DATA / "feedback").mkdir(parents=True, exist_ok=True)
+    (_DATA / "skills" / "history").mkdir(parents=True, exist_ok=True)
     for name in ("tasks.json", "runs.json"):
         if not (_DATA / name).exists():
             _write(_DATA / name, {"seq": 0, "items": []})
@@ -304,6 +305,44 @@ def read_digest(task_id: int) -> dict | None:
 def write_digest(task_id: int, data: dict) -> None:
     with _lock:
         _write(_digest_path(task_id), data)
+
+
+# ---------------- 热门 Skill 榜快照 ----------------
+# data/skills/{type}_{period}.json  当前榜单快照（公开 GET 直读，不打外网）
+# data/skills/history/{date}.json   每日 entries 精简快照（飙升榜做差用）
+
+def _skills_board_path(board_type: str, period: str) -> Path:
+    return _DATA / "skills" / f"{board_type}_{period}.json"
+
+
+def read_skills_board(board_type: str, period: str) -> dict | None:
+    with _lock:
+        return _read(_skills_board_path(board_type, period), None)
+
+
+def save_skills_board(board_type: str, period: str, data: dict) -> None:
+    with _lock:
+        _write(_skills_board_path(board_type, period), data)
+
+
+def archive_skills_history(date: str, data) -> None:
+    """归档某日 entries 精简快照（覆盖写当日）。"""
+    with _lock:
+        _write(_DATA / "skills" / "history" / f"{date}.json", data)
+
+
+def read_skills_history_before(date: str):
+    """取日期 ≤ date 的最近一份 history 快照（按文件名字典序）；无则返回 None。
+    飙升榜据此与当前快照做差。"""
+    with _lock:
+        hist_dir = _DATA / "skills" / "history"
+        if not hist_dir.exists():
+            return None
+        candidates = sorted(
+            p for p in hist_dir.glob("*.json") if p.stem <= date)
+        if not candidates:
+            return None
+        return _read(candidates[-1], None)
 
 
 # ---------------- 执行日志 ----------------

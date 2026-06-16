@@ -138,6 +138,7 @@ function switchView(view) {
   if (view === "digest") { loadDigest(); loadSysPulse(); }
   if (view === "feed") loadFeed();
   if (view === "trending") loadTrending();
+  if (view === "skills") loadSkills();
   if (view === "runs") loadRuns();
   if (view === "tasks") renderTaskList();
   if (view === "settings") loadSettings();
@@ -935,3 +936,121 @@ function runBoot() {
     loadSysPulse();
   }, 60000);
 })();
+
+// ---------------- 热门 Skill 榜 ----------------
+state.skillsType = "hot";
+
+async function loadSkills() {
+  const type = state.skillsType || "hot";
+  const body = $("#skillsBody");
+  const empty = $("#skillsEmpty");
+  const meta = $("#skillsMeta");
+  try {
+    const data = await api(`/api/skills/board?type=${type}&period=recent`);
+    if (meta) {
+      const srcTxt = (data.sources || [])
+        .map((s) => `${esc(s.id)}:<b class="src-${esc(s.status)}">${esc(s.status)}</b>`)
+        .join(" · ");
+      const snap = data.snapshot_time ? `快照 ${fmtTime(data.snapshot_time)}` : "尚无快照";
+      const note = type === "hot" ? " · 按 GitHub stars · 近期" : "";
+      meta.innerHTML = `${snap}${note}${srcTxt ? " · " + srcTxt : ""}`;
+    }
+    if (type === "rising") return renderSkillsRising(data, body, empty);
+    if (type === "praise") return renderSkillsPraise(data, body, empty);
+    return renderSkillsHot(data.rows || [], body, empty);
+  } catch (err) {
+    if (body) body.innerHTML = "";
+    if (empty) { empty.classList.remove("hidden"); empty.innerHTML = `<p>加载失败：${esc(err.message)}</p>`; }
+  }
+}
+
+function renderSkillsHot(rows, body, empty) {
+  empty.classList.toggle("hidden", rows.length > 0);
+  if (!rows.length) { body.innerHTML = ""; empty.innerHTML = "<p>暂无数据 — 点「重新生成」抓取（管理员）</p>"; return; }
+  body.innerHTML = rows.map((r, i) => {
+    const collection = r.type === "collection";
+    const kids = r.children || [];
+    const childBlock = collection && kids.length
+      ? `<details class="skill-children"><summary>📦 合集 · ${kids.length} 个 skill</summary>
+           <div class="skill-child-names">${kids.map((c) => `<span>${esc(c)}</span>`).join("")}</div></details>`
+      : "";
+    return `<li class="trend-row">
+      <span class="trend-rank">${i + 1}</span>
+      <div class="trend-main">
+        <a class="trend-name" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>
+        <div class="trend-meta-row mono"><span>⭐ ${fmtHeat(r.stars)}${collection ? " · 来源仓库" : ""}</span></div>
+        ${childBlock}
+      </div>
+    </li>`;
+  }).join("");
+}
+
+function renderSkillsRising(data, body, empty) {
+  if (data.status === "warming-up") {
+    body.innerHTML = "";
+    empty.classList.remove("hidden");
+    empty.innerHTML = "<p>📈 历史积累中 — 攒够 2 天快照后开放飙升榜</p>";
+    return;
+  }
+  const rows = data.rows || [];
+  empty.classList.toggle("hidden", rows.length > 0);
+  if (!rows.length) { body.innerHTML = ""; empty.innerHTML = "<p>暂无飙升数据</p>"; return; }
+  body.innerHTML = rows.map((r, i) => `<li class="trend-row">
+      <span class="trend-rank">${i + 1}</span>
+      <div class="trend-main">
+        <a class="trend-name" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>
+        <div class="trend-meta-row mono"><span class="skill-delta">+${fmtHeat((r.delta && r.delta.stars) || r.delta_stars || 0)} ⭐</span></div>
+      </div>
+    </li>`).join("");
+}
+
+function renderSkillsPraise(data, body, empty) {
+  const rows = data.rows || [];
+  const pending = data.pending || [];
+  let html = rows.map((r, i) => `<li class="trend-row">
+      <span class="trend-rank">${i + 1}</span>
+      <div class="trend-main">
+        <span class="trend-name">${esc(r.name)}</span>
+        <p class="skill-reason">${esc(r.reason || "")}</p>
+        <div class="trend-meta-row mono"><span>${esc(r.source_repo || "")} · ${fmtHeat(r.mention_count || r.mentions || 0)} 篇推荐</span></div>
+      </div>
+    </li>`).join("");
+  if (pending.length) {
+    html += `<li class="skill-pending"><details><summary>待证实（${pending.length}）</summary>
+      ${pending.map((p) => `<div class="skill-pending-row">${esc(p.name)} <span class="mono">${esc(p.reason || "")}</span></div>`).join("")}
+    </details></li>`;
+  }
+  const hasAny = rows.length || pending.length;
+  empty.classList.toggle("hidden", !!hasAny);
+  if (!hasAny) {
+    body.innerHTML = "";
+    empty.innerHTML = data.status === "warming-up"
+      ? "<p>⭐ 口碑榜需在「设置」配置模型后启用</p>" : "<p>暂无口碑数据</p>";
+    return;
+  }
+  body.innerHTML = html;
+}
+
+async function refreshSkills() {
+  const btn = $("#btnSkillsRefresh");
+  if (btn) btn.disabled = true;
+  try {
+    await api("/api/skills/refresh", { method: "POST", body: { type: state.skillsType || "hot" } });
+    await loadSkills();
+    toast("热门 Skill 榜已刷新");
+  } catch (err) {
+    toast(err.message);   // 冷却中(429) 等错误带后端文案
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 三 Tab 切换 + 刷新按钮
+$$("#skillsType .sort-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    $$("#skillsType .sort-btn").forEach((x) => x.classList.toggle("active", x === b));
+    state.skillsType = b.dataset.stype;
+    loadSkills();
+  })
+);
+$("#btnSkillsRefresh") && $("#btnSkillsRefresh").addEventListener("click", refreshSkills);

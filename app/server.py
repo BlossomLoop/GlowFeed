@@ -19,7 +19,9 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import digest, llm, pipeline, scheduler, store
+import time
+
+from . import digest, llm, pipeline, scheduler, skills_board, store
 from .sources import SOURCES, github_trending_list
 
 WEB_DIR = Path(__file__).parent.parent / "web"
@@ -29,6 +31,12 @@ MIME = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
 
 # 管理 token（由 serve() 注入；空串表示未配置，一律拒绝）
 TOKEN = ""
+
+# 热门 Skill 榜：管理员 force 刷新冷却（同 type 5 分钟内不重复真拉），以任务完成时间为准
+SKILLS_REFRESH_COOLDOWN = 300
+_skills_last_refresh: dict = {}
+_skills_refresh_lock = threading.Lock()
+_SKILLS_BOARD_TYPES = ("hot", "rising", "praise")
 
 # 需鉴权的 GET 路由（写操作端点统一在 do_POST/PUT/DELETE 顶部校验）
 PROTECTED_GET = {"/api/tasks", "/api/runs", "/api/settings", "/api/feedback"}
@@ -41,6 +49,28 @@ def check_token(auth_header: str, token: str) -> bool:
     prefix = "Bearer "
     presented = auth_header[len(prefix):] if auth_header.startswith(prefix) else ""
     return hmac.compare_digest(presented, token)
+
+
+def _skills_cooldown_remaining(board_type: str | None) -> int:
+    """返回该 type 距离冷却结束的剩余秒数（0 表示可刷新）。type=None 取全部 type 最大剩余。"""
+    types = [board_type] if board_type else list(_SKILLS_BOARD_TYPES)
+    now = time.time()
+    remaining = 0
+    with _skills_refresh_lock:
+        for t in types:
+            last = _skills_last_refresh.get(t)
+            if last is not None:
+                remaining = max(remaining, int(SKILLS_REFRESH_COOLDOWN - (now - last)))
+    return max(0, remaining)
+
+
+def _mark_skills_refresh(board_type: str | None) -> None:
+    """记录刷新完成时间（冷却以完成时间为准）。type=None 标记全部三榜。"""
+    types = [board_type] if board_type else list(_SKILLS_BOARD_TYPES)
+    now = time.time()
+    with _skills_refresh_lock:
+        for t in types:
+            _skills_last_refresh[t] = now
 
 
 def _public_tasks(tasks: list) -> list:
@@ -171,6 +201,15 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/api/trending":          # GitHub 趋势榜（公开，独立专页用，不经任务关键词过滤）
             self._json(github_trending_list(q.get("period", "today"),
                                             q.get("language") or "All"))
+        elif route == "/api/skills/board":       # 热门 Skill 榜（公开只读快照，不打外网）
+            board_type = q.get("type", "hot")
+            if board_type not in _SKILLS_BOARD_TYPES:
+                self._json({"error": f"未知榜单类型: {board_type}"}, 400)
+                return
+            period = q.get("period") or "recent"
+            snap = store.read_skills_board(board_type, period)
+            self._json(snap if snap else {"rows": [], "snapshot_time": None,
+                                          "sources": [], "status": "warming-up"})
         elif route.startswith("/api/"):
             self._json({"error": "not found"}, 404)
         else:
@@ -234,6 +273,22 @@ class Handler(BaseHTTPRequestHandler):
             rows = github_trending_list(b.get("period", "today"),
                                         b.get("language") or "All", force=True)
             self._json(rows)
+            return
+        if route == "/api/skills/refresh":
+            # 热门 Skill 榜强制刷新：仅管理员（do_POST 开头已 _authed），同 type 5 分钟冷却
+            b = self._body()
+            board_type = b.get("type")
+            if board_type is not None and board_type not in _SKILLS_BOARD_TYPES:
+                self._json({"error": f"未知榜单类型: {board_type}"}, 400)
+                return
+            period = b.get("period") or "recent"
+            cool = _skills_cooldown_remaining(board_type)
+            if cool > 0:
+                self._json({"error": f"冷却中，请 {cool} 秒后再试", "cooldown": cool}, 429)
+                return
+            data = skills_board.warm_skills(board_type, period)
+            _mark_skills_refresh(board_type)
+            self._json(data)
             return
         if route == "/api/settings/test":
             b = self._body()

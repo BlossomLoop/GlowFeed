@@ -35,6 +35,7 @@
         <button class="tab active" data-view="digest">简报</button>
         <button class="tab" data-view="feed">情报流</button>
         <button class="tab" data-view="trending">趋势</button>
+        <button class="tab" data-view="skills">热门Skill</button>
         <button class="tab admin-only" data-view="tasks">任务</button>
         <button class="tab admin-only" data-view="runs">日志</button>
         <button class="tab admin-only" data-view="settings">设置</button>
@@ -111,6 +112,20 @@
     <div id="trendMeta" class="feed-meta mono"></div>
     <ol id="trendBody" class="trend-list"></ol>
     <div id="trendEmpty" class="empty hidden"><p>暂无趋势数据 — OSSInsight 可能瞬时无响应，稍后点「刷新」重试</p></div>
+  </section>
+
+  <!-- ============ 热门 Skill 榜 ============ -->
+  <section id="view-skills" class="view">
+    <div class="toolbar">
+      <span class="trend-title mono">热门 Skill<span class="trend-sub">Claude Code / Codex · 免 key</span></span>
+      <div class="sort-toggle mono" id="skillsType">
+        <button class="sort-btn active" data-stype="hot">热门</button><button class="sort-btn" data-stype="rising">飙升</button><button class="sort-btn" data-stype="praise">口碑</button>
+      </div>
+      <button id="btnSkillsRefresh" class="btn-ghost admin-only">↻ 重新生成</button>
+    </div>
+    <div id="skillsMeta" class="feed-meta mono"></div>
+    <ol id="skillsBody" class="trend-list"></ol>
+    <div id="skillsEmpty" class="empty hidden"><p>暂无数据 — 点「重新生成」抓取（管理员）</p></div>
   </section>
 
   <!-- ============ 任务管理 ============ -->
