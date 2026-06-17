@@ -952,7 +952,9 @@ async function loadSkills() {
         .map((s) => `${esc(s.id)}:<b class="src-${esc(s.status)}">${esc(s.status)}</b>`)
         .join(" · ");
       const snap = data.snapshot_time ? `快照 ${fmtTime(data.snapshot_time)}` : "尚无快照";
-      const note = type === "hot" ? " · 按 GitHub stars · 近期" : "";
+      const note = type === "hot" ? " · 按 GitHub stars · 近期"
+        : type === "rising" ? " · 按近 2 天 stars 增量"
+        : " · 多源交叉推荐";
       meta.innerHTML = `${snap}${note}${srcTxt ? " · " + srcTxt : ""}`;
     }
     if (type === "rising") return renderSkillsRising(data, body, empty);
@@ -974,11 +976,15 @@ function renderSkillsHot(rows, body, empty) {
       ? `<details class="skill-children"><summary>📦 合集 · ${kids.length} 个 skill</summary>
            <div class="skill-child-names">${kids.map((c) => `<span>${esc(c)}</span>`).join("")}</div></details>`
       : "";
-    return `<li class="trend-row">
-      <span class="trend-rank">${i + 1}</span>
+    return `<li class="trend-item">
+      <span class="trend-rank mono">${i + 1}</span>
       <div class="trend-main">
         <a class="trend-name" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>
-        <div class="trend-meta-row mono"><span>⭐ ${fmtHeat(r.stars)}${collection ? " · 来源仓库" : ""}</span></div>
+        ${r.description ? `<p class="trend-desc">${esc(r.description)}</p>` : ""}
+        <div class="trend-tags mono">
+          <span class="trend-stars">★ ${fmtHeat(r.stars) || r.stars}</span>
+          <span class="skill-kind">${collection ? "合集仓库" : "单体 skill"}</span>
+        </div>
         ${childBlock}
       </div>
     </li>`;
@@ -995,31 +1001,28 @@ function renderSkillsRising(data, body, empty) {
   const rows = data.rows || [];
   empty.classList.toggle("hidden", rows.length > 0);
   if (!rows.length) { body.innerHTML = ""; empty.innerHTML = "<p>暂无飙升数据</p>"; return; }
-  body.innerHTML = rows.map((r, i) => `<li class="trend-row">
-      <span class="trend-rank">${i + 1}</span>
+  body.innerHTML = rows.map((r, i) => `<li class="trend-item">
+      <span class="trend-rank mono">${i + 1}</span>
       <div class="trend-main">
         <a class="trend-name" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>
-        <div class="trend-meta-row mono"><span class="skill-delta">+${fmtHeat((r.delta && r.delta.stars) || r.delta_stars || 0)} ⭐</span></div>
+        ${r.description ? `<p class="trend-desc">${esc(r.description)}</p>` : ""}
+        <div class="trend-tags mono">
+          <span class="skill-delta">+${fmtHeat((r.delta && r.delta.stars) || r.delta_stars || 0)} ★ 近 2 天</span>
+          ${r.stars ? `<span class="trend-stars">★ ${fmtHeat(r.stars) || r.stars} 总</span>` : ""}
+        </div>
       </div>
     </li>`).join("");
+}
+
+// 口碑榜：后端结构为 {name, source_repo, mention_count, mentions:[{reason,domain,author,...}]}
+//（顶层无 reason 字段——理由取自首条 mention）
+function praiseReason(it) {
+  return (it.mentions && it.mentions[0] && it.mentions[0].reason) || it.reason || "";
 }
 
 function renderSkillsPraise(data, body, empty) {
   const rows = data.rows || [];
   const pending = data.pending || [];
-  let html = rows.map((r, i) => `<li class="trend-row">
-      <span class="trend-rank">${i + 1}</span>
-      <div class="trend-main">
-        <span class="trend-name">${esc(r.name)}</span>
-        <p class="skill-reason">${esc(r.reason || "")}</p>
-        <div class="trend-meta-row mono"><span>${esc(r.source_repo || "")} · ${fmtHeat(r.mention_count || r.mentions || 0)} 篇推荐</span></div>
-      </div>
-    </li>`).join("");
-  if (pending.length) {
-    html += `<li class="skill-pending"><details><summary>待证实（${pending.length}）</summary>
-      ${pending.map((p) => `<div class="skill-pending-row">${esc(p.name)} <span class="mono">${esc(p.reason || "")}</span></div>`).join("")}
-    </details></li>`;
-  }
   const hasAny = rows.length || pending.length;
   empty.classList.toggle("hidden", !!hasAny);
   if (!hasAny) {
@@ -1028,7 +1031,42 @@ function renderSkillsPraise(data, body, empty) {
       ? "<p>⭐ 口碑榜需在「设置」配置模型后启用</p>" : "<p>暂无口碑数据</p>";
     return;
   }
-  body.innerHTML = html;
+
+  const mainHtml = rows.map((r, i) => {
+    const reason = praiseReason(r);
+    const sources = r.mention_count || (r.mentions || []).length;
+    const nameEl = r.source_repo
+      ? `<a class="trend-name" href="https://github.com/${esc(r.source_repo)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
+      : `<span class="trend-name">${esc(r.name)}</span>`;
+    return `<li class="trend-item">
+      <span class="trend-rank mono">${i + 1}</span>
+      <div class="trend-main">
+        ${nameEl}
+        ${reason ? `<p class="trend-desc">${esc(reason)}</p>` : ""}
+        <div class="trend-tags mono">
+          <span class="trend-score">📣 ${sources} 个独立来源推荐</span>
+          ${r.source_repo ? `<span class="trend-by">${esc(r.source_repo)}</span>` : ""}
+        </div>
+      </div>
+    </li>`;
+  }).join("");
+
+  // 主榜为空、只剩单源候选时，先解释口碑榜规则，避免「待证实」孤零零无上下文
+  const introHtml = rows.length ? ""
+    : `<li class="skill-praise-intro">口碑榜按「多源交叉推荐」收录：需 ≥2 个独立来源（不同站点 / 作者）共同提到才进主榜。当前还没有 skill 达标，以下为单源候选。</li>`;
+
+  const pendingHtml = pending.length
+    ? `<li class="skill-pending"><details ${rows.length ? "" : "open"}>
+         <summary>待证实 · 仅单一来源提到（${pending.length}）</summary>
+         <p class="skill-pending-hint">需第 2 个独立来源交叉印证才会进主榜，借此过滤单篇软文。</p>
+         ${pending.map((p) => {
+           const reason = praiseReason(p);
+           return `<div class="skill-pending-row"><b>${esc(p.name)}</b>${reason ? ` <span class="mono">${esc(reason)}</span>` : ""}</div>`;
+         }).join("")}
+       </details></li>`
+    : "";
+
+  body.innerHTML = introHtml + mainHtml + pendingHtml;
 }
 
 async function refreshSkills() {

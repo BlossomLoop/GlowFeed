@@ -827,10 +827,13 @@ body.guest .fb-btns { display: none; }
 .trend-loading { list-style: none; color: var(--paper-dim); font-family: var(--mono); padding: 24px 4px; }
 
 /* ---- 热门 Skill 榜 ---- */
-.trend-meta-row { display: flex; gap: 12px; color: var(--paper-mute); font-size: var(--fs-xs); margin-top: 2px; }
 .skill-delta { color: var(--amber); }
-.skill-reason { color: var(--paper-mute); margin: 2px 0 0; font-size: var(--fs-xs); }
-.skill-children { margin-top: 4px; }
+.skill-kind { color: var(--paper-mute); }
+.skill-praise-intro { color: var(--paper-dim); font-size: var(--fs-xs); line-height: 1.6;
+  background: var(--panel-1); border: var(--bd); border-left: 2px solid var(--amber-dim);
+  border-radius: var(--r-1); padding: 10px 14px; margin-bottom: 4px; }
+.skill-pending-hint { color: var(--paper-dim); font-size: var(--fs-2xs); line-height: 1.5; margin: 6px 0 8px; }
+.skill-children { margin-top: 8px; }
 .skill-children > summary { cursor: pointer; color: var(--paper-dim); font-family: var(--mono); font-size: var(--fs-xs); }
 .skill-child-names { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
 .skill-child-names span { font-family: var(--mono); font-size: var(--fs-xs); color: var(--paper-mute); border: 1px solid var(--amber-dim); border-radius: 3px; padding: 1px 6px; }

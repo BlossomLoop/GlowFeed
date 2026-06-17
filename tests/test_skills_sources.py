@@ -40,7 +40,7 @@ class TestSkillSearchParse(unittest.TestCase):
         out = ss._parse_skill_search(self.data)
         self.assertTrue(out)
         e = out[0]
-        self.assertEqual(set(e), {"id", "name", "url", "github_stars", "pushed_at", "topics"})
+        self.assertEqual(set(e), {"id", "name", "url", "description", "github_stars", "pushed_at", "topics"})
         self.assertIn("/", e["id"])
         self.assertIsInstance(e["github_stars"], int)
 

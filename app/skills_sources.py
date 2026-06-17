@@ -43,6 +43,7 @@ def _parse_skill_search(data: dict) -> list[dict]:
             "id": full_name,
             "name": name,
             "url": r.get("html_url") or f"https://github.com/{full_name}",
+            "description": (r.get("description") or "").strip(),
             "github_stars": int(r.get("stargazers_count") or 0),
             "pushed_at": r.get("pushed_at"),
             "topics": list(topics),

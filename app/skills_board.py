@@ -35,6 +35,7 @@ def normalize(raw_items: list[dict]) -> list[dict]:
                 "id": rid,
                 "name": raw.get("name") or rid.split("/")[-1],
                 "url": raw.get("url") or f"https://github.com/{rid}",
+                "description": "",
                 "type": "standalone",
                 "signals": {"github_stars": 0, "pushed_at": None, "blog_mentions": []},
                 "delta": {"stars": None},
@@ -47,6 +48,8 @@ def normalize(raw_items: list[dict]) -> list[dict]:
             e["name"] = raw["name"]
         if raw.get("url"):
             e["url"] = raw["url"]
+        if raw.get("description") and not e["description"]:
+            e["description"] = raw["description"]
         stars = raw.get("github_stars")
         if stars is not None:
             e["signals"]["github_stars"] = max(e["signals"]["github_stars"], int(stars))
@@ -78,6 +81,7 @@ def build_hot(entries: list[dict]) -> list[dict]:
             "id": e["id"],
             "name": e["name"],
             "url": e["url"],
+            "description": e.get("description") or "",
             "type": e["type"],
             "stars": e["signals"]["github_stars"],
             "pushed_at": e["signals"]["pushed_at"],
@@ -110,6 +114,7 @@ def build_rising(current: list[dict], history: list[dict]) -> dict:
             "id": rid,
             "name": e["name"],
             "url": e["url"],
+            "description": e.get("description") or "",
             "type": e["type"],
             "stars": now_stars,
             "delta_stars": delta,
