@@ -22,7 +22,7 @@ from pathlib import Path
 import time
 
 from . import digest, llm, pipeline, scheduler, skills_board, store
-from .sources import SOURCES, github_trending_list
+from .sources import SOURCES, github_trending_list, trending_fetched_at
 
 WEB_DIR = Path(__file__).parent.parent / "web"
 
@@ -199,8 +199,9 @@ class Handler(BaseHTTPRequestHandler):
                 task_id=q.get("task_id"),
                 limit=min(int(q.get("limit", 20)), 100)))
         elif route == "/api/trending":          # GitHub 趋势榜（公开，独立专页用，不经任务关键词过滤）
-            self._json(github_trending_list(q.get("period", "today"),
-                                            q.get("language") or "All"))
+            period, language = q.get("period", "today"), q.get("language") or "All"
+            self._json({"rows": github_trending_list(period, language),
+                        "fetched_at": trending_fetched_at(period, language)})
         elif route == "/api/skills/board":       # 热门 Skill 榜（公开只读快照，不打外网）
             board_type = q.get("type", "hot")
             if board_type not in _SKILLS_BOARD_TYPES:

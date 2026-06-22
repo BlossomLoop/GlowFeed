@@ -172,6 +172,7 @@ class TestGithubTrending(unittest.TestCase):
     def _with_payload(self, payload, fn):
         from app import http_util, sources
         sources._TREND_CACHE.clear()    # 清缓存，避免跨用例命中
+        sources._TREND_FETCHED.clear()  # 同步清抓取时间戳，避免跨用例污染
         orig = http_util.get_json
         http_util.get_json = lambda *a, **k: payload
         try:
@@ -210,6 +211,29 @@ class TestGithubTrending(unittest.TestCase):
     def test_empty_payload_returns_list(self):
         self.assertEqual(
             self._with_payload(None, lambda s: s.github_trending_list("today")), [])
+
+    def test_records_fetched_at_on_real_fetch(self):
+        """真拉成功后记录抓取时间戳；命中缓存仍沿用同一时间戳（前端据此显示真实刷新时间）。"""
+        from app import sources
+        sample = {"data": {"rows": [{"repo_name": "a/b", "stars": 1}]}}
+        # 拉取前无时间戳
+        self._with_payload(sample, lambda s: None)  # 仅清缓存
+        self.assertIsNone(sources.trending_fetched_at("today"))
+        # 真拉成功 → 记录时间戳（store.now() 格式）
+        out = self._with_payload(sample, lambda s: s.github_trending_list("today"))
+        self.assertEqual(len(out), 1)
+        ts = sources.trending_fetched_at("today")
+        self.assertIsNotNone(ts)
+        self.assertRegex(ts, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+        # 命中缓存（不真拉）→ 时间戳不变
+        from app import http_util
+        orig = http_util.get_json
+        http_util.get_json = lambda *a, **k: (_ for _ in ()).throw(AssertionError("不应真拉"))
+        try:
+            sources.github_trending_list("today")
+        finally:
+            http_util.get_json = orig
+        self.assertEqual(sources.trending_fetched_at("today"), ts)
 
 
 class TestTrendSort(unittest.TestCase):

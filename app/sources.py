@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
-from . import http_util
+from . import http_util, store
 
 
 def _item(title, url, source, summary="", author="", published_at=None, engagement=0):
@@ -225,7 +225,13 @@ fetch_sspai = _rss_source("https://sspai.com/feed", "sspai")
 # 本机直连可用）。**不作为任务来源**（英文仓库会被任务的中文关键词过滤光），改由独立「趋势」专页
 # 直接调用 github_trending_list()，拿到不经关键词过滤的干净榜单。
 _TREND_CACHE: dict = {}     # (api_period, language) -> rows；快照式：仅 force（重启/每日08:30）时真拉，平时读缓存
+_TREND_FETCHED: dict = {}   # (api_period, language) -> 真拉成功的 UTC 时间戳，供前端显示真实刷新时间
 _TREND_PERIODS = {"today": "past_24_hours", "week": "past_week", "month": "past_month"}
+
+
+def trending_fetched_at(period: str = "today", language: str = "All") -> str | None:
+    """返回该榜单快照的真实抓取时间（store.now() 格式 UTC 串）；从未拉过则 None。"""
+    return _TREND_FETCHED.get((_TREND_PERIODS.get(period, "past_24_hours"), language))
 
 
 def github_trending_list(period: str = "today", language: str = "All",
@@ -265,6 +271,7 @@ def github_trending_list(period: str = "today", language: str = "All",
         })
     if out:
         _TREND_CACHE[key] = out
+        _TREND_FETCHED[key] = store.now()   # 记录本次真拉时刻，前端据此显示真实刷新时间
     elif hit is not None:
         return hit            # 这次拉空但有旧快照 → 保留旧的，别把榜单清空
     return out

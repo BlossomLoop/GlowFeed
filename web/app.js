@@ -582,8 +582,10 @@ async function loadFeed() {
     } catch {}
   }
 
+  // 刷新时间取这批情报里最新的后台抓取时刻（fetched_at），而非页面渲染时刻
+  const latestFetch = items.reduce((m, a) => (a.fetched_at && a.fetched_at > m ? a.fetched_at : m), "");
   $("#feedMeta").textContent = items.length
-    ? `共 ${items.length} 条情报 · ${new Date().toLocaleTimeString("zh-CN", { hour12: false })} 刷新`
+    ? `共 ${items.length} 条情报 · 数据更新于 ${fmtTime(latestFetch)}`
     : "";
   // 仅"非搜索态"下、条数较上次增长 → 视为有新情报，雷达命中一次
   if (state.lastFeedCount != null && items.length > state.lastFeedCount && !$("#feedSearch").value.trim()) {
@@ -675,10 +677,12 @@ async function loadTrending() {
   body.innerHTML = '<li class="trend-loading mono">正在拉取 GitHub 趋势…</li>';
   $("#trendEmpty").classList.add("hidden");
   try {
-    const rows = await api(`/api/trending?period=${period}&language=${encodeURIComponent(lang)}`);
+    const data = await api(`/api/trending?period=${period}&language=${encodeURIComponent(lang)}`);
+    const rows = data.rows || [];
     const periodLabel = period === "today" ? "今日" : period === "week" ? "本周" : "本月";
+    // 刷新时间取后端真实抓取时刻（OSSInsight 快照），而非页面渲染时刻
     $("#trendMeta").textContent = rows.length
-      ? `共 ${rows.length} 个仓库 · ${periodLabel}趋势 · ${new Date().toLocaleTimeString("zh-CN", { hour12: false })} 刷新`
+      ? `共 ${rows.length} 个仓库 · ${periodLabel}趋势 · 数据更新于 ${fmtTime(data.fetched_at)}`
       : "";
     if (!rows.length) {
       body.innerHTML = "";
