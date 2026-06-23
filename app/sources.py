@@ -112,11 +112,55 @@ def fetch_github(keyword: str, days: int = 7):
     return out
 
 
+# Bing SERP 里的词典/百科/翻译挂件域名：英文词查询（best/top 等）常被其劫持，
+# 整页自然结果退化成单词释义，对资讯/口碑均无用，解析时剔除。
+_BING_NOISE_HOSTS = (
+    "iciba.com", "esdict.cn", "youdao.com", "dict.cn", "hujiang.com",
+    "dictionary.cambridge.org", "baike.baidu.com", "cp.baidu.com",
+    "lingolandedu.com", "merriam-webster.com", "collinsdictionary.com",
+)
+
+
+def _host_of(url: str) -> str:
+    """取 url 主机名（小写、去前导 www.），失败返空。"""
+    m = re.match(r"https?://([^/]+)", url or "")
+    host = (m.group(1) if m else "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _parse_bing_html(text: str, limit: int = 20) -> list[dict]:
+    """解析 Bing 网页 SERP 的自然结果（b_algo 区块）。纯函数（喂夹具可离线测）。
+
+    标题在 <h2><a href=URL>TITLE</a>，摘要在 <div class="b_caption"><p>。
+    剔除词典/百科挂件域名（见 _BING_NOISE_HOSTS）。无结果/解析失败返 []。"""
+    out = []
+    for block in (text or "").split('class="b_algo"')[1:]:
+        block = re.sub(r"<link[^>]*>", "", block)  # 区块内夹带的 CSS link 会干扰 href 匹配
+        m = re.search(r'<h2[^>]*>\s*<a[^>]*\bhref="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                      block, re.DOTALL)
+        if not m:
+            continue
+        url = m.group(1)
+        host = _host_of(url)
+        if not host or any(host == n or host.endswith("." + n) for n in _BING_NOISE_HOSTS):
+            continue
+        sm = re.search(r'class="b_caption">.*?<p[^>]*>(.*?)</p>', block, re.DOTALL)
+        out.append(_item(
+            title=re.sub(r"<[^>]+>", "", m.group(2)), url=url, source="bing",
+            summary=sm.group(1) if sm else "",
+        ))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def fetch_bing(keyword: str, days: int = 7):
-    # cn.bing.com 的 format=rss 是免 key 的网页搜索结果源，中英文均覆盖
-    url = f"https://cn.bing.com/search?q={http_util.quote(keyword)}&format=rss&count=30"
-    text = http_util.get(url)
-    return _parse_rss(text, "bing") if text else []
+    # 解析网页 SERP 的自然结果。format=rss 端点已退化为只返词典/即时答案卡片，弃用。
+    # 用英文 UI（mkt=en-US）召回更全的开发者文章；解析阶段剔除词典/百科挂件域名。
+    url = (f"https://www.bing.com/search?q={http_util.quote(keyword)}"
+           f"&count=20&setlang=en&mkt=en-US")
+    text = http_util.get(url, timeout=12)
+    return _parse_bing_html(text) if text else []
 
 
 def fetch_reddit(keyword: str, days: int = 7):

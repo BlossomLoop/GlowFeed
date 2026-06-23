@@ -9,6 +9,7 @@
 
 解析逻辑与网络分离：`_parse_*` 纯函数可喂录制夹具离线测；fetcher 失败一律返 []。
 """
+import html as _htmllib
 import re
 
 from . import http_util, sources
@@ -104,12 +105,13 @@ def repo_tree_skills(repo: str, branch: str = "main") -> dict:
 
 # ---------------- 博客口碑候选 ----------------
 
-# 多语种 query：中英各几条，覆盖 claude code / codex skill 推荐类文章
+# query 须避开以 best/top 等英文词典词开头——Bing CN SERP 会将其劫持为单词释义，
+# 整页自然结果退化成词典条目（实测）。改用短语锚定 / 中文意图词召回真实推荐文章。
 _BLOG_QUERIES = [
-    "best claude code skills",
-    "top codex skills",
-    "claude skill 推荐",
-    "claude code skill 精选",
+    "claude code skill 推荐",
+    "claude code skills 精选",
+    "codex skill 推荐",
+    "claude code 好用的 skill",
 ]
 
 # 标题里 owner/repo 形态的 GitHub 引用，用于无 LLM 时的兜底提名
@@ -163,13 +165,18 @@ def blog_mention_search(llm_extract=None) -> list[dict]:
     每个候选形如 {name, source_repo?, reason, domain, author, title?, url?}。
 
     任何源/抽取失败：跳过该步，最终返 []（绝不抛出）。"""
-    articles = []
+    articles, seen = [], set()
     for kw in _BLOG_QUERIES:
         for fetch in (sources.fetch_bing, sources.fetch_hackernews):
             try:
-                articles.extend(fetch(kw) or [])
+                hits = fetch(kw) or []
             except Exception:
                 continue
+            for a in hits:  # 多 query 常召回同一文章，按 url 去重免重复抓正文/抽取
+                url = (a.get("url") or "").strip()
+                if url and url not in seen:
+                    seen.add(url)
+                    articles.append(a)
     if not articles:
         return []
 
@@ -185,29 +192,75 @@ def blog_mention_search(llm_extract=None) -> list[dict]:
     return _fallback_extract(articles)
 
 
+# 逐篇抓正文 + 抽取的文章数上限：抓正文 + LLM 各耗时，控刷新整体时延。
+_MAX_ARTICLES = 12
+# 正文短于此视为抓取失败 / JS 壳 / 反爬空页，退回用搜索摘要。
+_BODY_MIN_CHARS = 800
+# 抽取输出上限：清单体文章一篇能荐 10+ 个 skill，需放大避免 JSON 被截断。
+_EXTRACT_MAX_TOKENS = 1500
+# 瞬时失败重试次数（正文抓取 / LLM 抽取共用）：把逐次产量拉稳到接近满载。
+_RETRY = 2
+# 已知硬反爬域名：基于反爬 cookie/token 拦截（zhihu 恒 403，换请求头无效），
+# 抓正文必失败，直接跳过、退回搜索摘要，省一次注定 403 的请求与文章配额。
+_BODY_BLOCKED_HOSTS = ("zhihu.com",)
+
+
+def _html_to_text(raw: str) -> str:
+    """粗剥 HTML 为纯文本：去 script/style，去标签，反转义，折叠空白。纯函数。"""
+    t = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw or "")
+    t = re.sub(r"<[^>]+>", " ", t)
+    return re.sub(r"\s+", " ", _htmllib.unescape(t)).strip()
+
+
+def _fetch_article_text(url: str, max_chars: int = 5000) -> str:
+    """抓文章正文文本（清单体推荐文里完整的 skill 列表只在正文，不在搜索摘要）。
+
+    失败 / 正文过短（反爬空页或 JS 壳）返 ''，由调用方退回用摘要。
+    已知硬反爬域名直接跳过；其余瞬时失败重试 _RETRY 次。"""
+    host = _domain_of(url)
+    if any(host == b or host.endswith("." + b) for b in _BODY_BLOCKED_HOSTS):
+        return ""
+    for _ in range(_RETRY):
+        raw = http_util.get(url, timeout=8, via_proxy=True)
+        if raw:
+            text = _html_to_text(raw)
+            if len(text) >= _BODY_MIN_CHARS:
+                return text[:max_chars]
+    return ""
+
+
 def _llm_extract_candidates(articles: list[dict]) -> list[dict]:
-    """默认抽取器：让 LLM 从文章里识别被推荐的 skill 候选。
+    """默认抽取器：逐篇抓正文 → LLM 抽被推荐的 skill 名。
 
-    LLM 未配置/失败返回空 → 调用方降级。每篇文章带上来源 domain/author 供去重。"""
-    import json
-
+    逐篇而非批量：正文体量大，且 domain/author 由文章自身确定（代码归属，不靠 LLM 回显），
+    跨源去重才准。单篇失败只跳过该篇，不拖累其余。LLM 全失败返空 → 调用方降级。"""
     from . import llm
 
-    payload = [{
-        "title": a.get("title") or "",
-        "summary": (a.get("summary") or "")[:200],
-        "url": a.get("url") or "",
-        "domain": _domain_of(a.get("url", "")),
-        "author": a.get("author") or "",
-    } for a in articles[:40]]
+    out = []
+    for a in articles[:_MAX_ARTICLES]:
+        out.extend(_extract_one_article(llm, a))
+    return out
+
+
+def _extract_one_article(llm, a: dict) -> list[dict]:
+    """抓正文（失败退回摘要）→ LLM 抽 skill 名 → 用文章自身 domain/author 归属。"""
+    import json
+
+    body = _fetch_article_text(a.get("url", "")) or (a.get("summary") or "")
+    if not body.strip():
+        return []
     system = "你是技术情报抽取助手，只输出 JSON 数组，不要解释。"
     user = (
-        "下面是若干推荐 Claude Code / Codex Skill 的文章。请抽取每篇明确推荐的 skill，"
-        "输出 JSON 数组，每项 {name, source_repo(GitHub owner/repo 或空), reason(一句话), "
-        "domain, author}。domain/author 直接用该文章给的值。无法确定推荐对象的文章跳过。\n\n"
-        + json.dumps(payload, ensure_ascii=False)
+        "下文是一篇推荐 Claude Code / Codex Skill 的文章。抽取其中明确被推荐的 skill 名，"
+        "输出 JSON 数组，每项 {name, source_repo(GitHub owner/repo 或空), reason(一句话)}。"
+        "只要具体 skill 名，忽略泛泛的工具/平台/模型名。无明确推荐则输出 []。\n\n"
+        f"标题：{a.get('title', '')}\n正文：{body}"
     )
-    text, _label = llm.summarize(system, user)
+    text = None
+    for _ in range(_RETRY):  # LLM 偶发超时/空响应重试，稳住逐篇产量
+        text, _label = llm.summarize(system, user, max_tokens=_EXTRACT_MAX_TOKENS)
+        if text:
+            break
     if not text:
         return []
     m = re.search(r"\[.*\]", text, re.DOTALL)
@@ -217,6 +270,8 @@ def _llm_extract_candidates(articles: list[dict]) -> list[dict]:
         arr = json.loads(m.group(0))
     except ValueError:
         return []
+    domain = _domain_of(a.get("url", ""))      # 来源归该文章，供口碑榜 ≥2 跨源去重
+    author = (a.get("author") or "").strip()
     out = []
     for it in arr:
         if not isinstance(it, dict):
@@ -228,7 +283,9 @@ def _llm_extract_candidates(articles: list[dict]) -> list[dict]:
             "name": name,
             "source_repo": (it.get("source_repo") or "").strip() or None,
             "reason": (it.get("reason") or "").strip(),
-            "domain": _strip_www((it.get("domain") or "").strip()),
-            "author": (it.get("author") or "").strip(),
+            "domain": domain,
+            "author": author,
+            "title": (a.get("title") or "").strip(),  # 推荐来源文章，供前端可点击跳转
+            "url": (a.get("url") or "").strip(),
         })
     return out

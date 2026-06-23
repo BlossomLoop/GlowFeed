@@ -109,8 +109,12 @@ def _call_anthropic(cfg: dict, system: str, user: str,
     return None, f"HTTP {status}: {body[:160]}"
 
 
-def _dispatch(cfg: dict, system: str, user: str) -> tuple[str | None, str, str | None]:
-    """返回 (文本, 标签, 错误)。标签如 'openai:gpt-4o-mini'，失败时文本为 None。"""
+def _dispatch(cfg: dict, system: str, user: str,
+              max_tokens: int = 600) -> tuple[str | None, str, str | None]:
+    """返回 (文本, 标签, 错误)。标签如 'openai:gpt-4o-mini'，失败时文本为 None。
+
+    max_tokens 控制云端 provider 的输出上限；抽取类长输出（如清单体文章抽多个 skill）
+    需调大，否则 JSON 会被截断。Ollama 走自身默认，不受此参数约束。"""
     provider = cfg.get("provider", "auto")
     if provider == "off":
         return None, "extractive", None
@@ -128,18 +132,20 @@ def _dispatch(cfg: dict, system: str, user: str) -> tuple[str | None, str, str |
         text, err = _call_ollama(base, model, system, user)
         return text, f"ollama:{model}", err
     if provider == "openai":
-        text, err = _call_openai(cfg, system, user)
+        text, err = _call_openai(cfg, system, user, max_tokens)
         return text, f"openai:{cfg['model']}", err
     if provider == "anthropic":
-        text, err = _call_anthropic(cfg, system, user)
+        text, err = _call_anthropic(cfg, system, user, max_tokens)
         return text, f"anthropic:{cfg['model']}", err
     return None, "extractive", f"未知 provider: {provider}"
 
 
-def summarize(system: str, user: str) -> tuple[str | None, str]:
-    """生成综述。失败/未配置时返回 (None, 'extractive')，由调用方降级。"""
+def summarize(system: str, user: str, max_tokens: int = 600) -> tuple[str | None, str]:
+    """生成综述。失败/未配置时返回 (None, 'extractive')，由调用方降级。
+
+    max_tokens 默认 600（综述足够）；抽取类长输出可调大避免 JSON 截断。"""
     cfg = get_config()
-    text, label, _ = _dispatch(cfg, system, user)
+    text, label, _ = _dispatch(cfg, system, user, max_tokens)
     return (text, label) if text else (None, "extractive")
 
 

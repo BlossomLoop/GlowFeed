@@ -149,6 +149,47 @@ class TestBlogMentionSearch(unittest.TestCase):
         self.assertEqual(ss.blog_mention_search(llm_extract=lambda a: [{"name": "x"}]), [])
 
 
+class TestArticleBodyExtract(unittest.TestCase):
+    """正文抓取 + 逐篇抽取：HTML 剥文、抓取失败降级、domain/author 代码归属。"""
+
+    def test_html_to_text_strips_tags_and_scripts(self):
+        raw = "<html><head><style>x{}</style></head><body><script>bad()</script>" \
+              "<h1>标题</h1>  <p>正文&amp;内容</p></body></html>"
+        out = ss._html_to_text(raw)
+        self.assertNotIn("<", out)
+        self.assertNotIn("bad()", out)
+        self.assertNotIn("x{}", out)
+        self.assertIn("标题", out)
+        self.assertIn("正文&内容", out)  # 实体已反转义
+
+    def test_fetch_article_text_short_body_returns_empty(self):
+        # 反爬空页 / JS 壳：正文过短应判失败返 ''（调用方退回摘要）
+        orig = ss.http_util.get
+        ss.http_util.get = lambda *a, **k: "<html><body>太短</body></html>"
+        try:
+            self.assertEqual(ss._fetch_article_text("https://x.com/p"), "")
+        finally:
+            ss.http_util.get = orig
+
+    def test_extract_attributes_domain_author_from_article(self):
+        # LLM 只回 skill 名，domain/author 由文章本身归属（保障 ≥2 跨源去重准确）
+        fake_llm = type("L", (), {
+            "summarize": staticmethod(
+                lambda system, user, max_tokens=600: ('[{"name":"pdf-tools"}]', "x"))
+        })
+        orig = ss._fetch_article_text
+        ss._fetch_article_text = lambda url, max_chars=5000: "正文里推荐了 pdf-tools"
+        try:
+            art = {"title": "t", "url": "https://blog.csdn.net/u/123", "author": "alice"}
+            out = ss._extract_one_article(fake_llm, art)
+        finally:
+            ss._fetch_article_text = orig
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["name"], "pdf-tools")
+        self.assertEqual(out[0]["domain"], "blog.csdn.net")
+        self.assertEqual(out[0]["author"], "alice")
+
+
 class TestFetcherFailureTolerance(unittest.TestCase):
     def test_search_network_fail_returns_empty(self):
         orig = ss.http_util.get_json

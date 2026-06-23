@@ -1024,6 +1024,13 @@ function praiseReason(it) {
   return (it.mentions && it.mentions[0] && it.mentions[0].reason) || it.reason || "";
 }
 
+// 可点击跳转目标：优先 GitHub 仓库，无则跳「推荐它的那篇文章」（首条 mention 的 url）
+function praiseLink(it) {
+  if (it.source_repo) return `https://github.com/${it.source_repo}`;
+  const m = (it.mentions && it.mentions[0]) || {};
+  return m.url || "";
+}
+
 function renderSkillsPraise(data, body, empty) {
   const rows = data.rows || [];
   const pending = data.pending || [];
@@ -1039,8 +1046,9 @@ function renderSkillsPraise(data, body, empty) {
   const mainHtml = rows.map((r, i) => {
     const reason = praiseReason(r);
     const sources = r.mention_count || (r.mentions || []).length;
-    const nameEl = r.source_repo
-      ? `<a class="trend-name" href="https://github.com/${esc(r.source_repo)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
+    const href = praiseLink(r);
+    const nameEl = href
+      ? `<a class="trend-name" href="${esc(href)}" target="_blank" rel="noopener">${esc(r.name)}</a>`
       : `<span class="trend-name">${esc(r.name)}</span>`;
     return `<li class="trend-item">
       <span class="trend-rank mono">${i + 1}</span>
@@ -1065,7 +1073,11 @@ function renderSkillsPraise(data, body, empty) {
          <p class="skill-pending-hint">需第 2 个独立来源交叉印证才会进主榜，借此过滤单篇软文。</p>
          ${pending.map((p) => {
            const reason = praiseReason(p);
-           return `<div class="skill-pending-row"><b>${esc(p.name)}</b>${reason ? ` <span class="mono">${esc(reason)}</span>` : ""}</div>`;
+           const href = praiseLink(p);
+           const nameEl = href
+             ? `<a href="${esc(href)}" target="_blank" rel="noopener"><b>${esc(p.name)}</b></a>`
+             : `<b>${esc(p.name)}</b>`;
+           return `<div class="skill-pending-row">${nameEl}${reason ? ` <span class="mono">${esc(reason)}</span>` : ""}</div>`;
          }).join("")}
        </details></li>`
     : "";
