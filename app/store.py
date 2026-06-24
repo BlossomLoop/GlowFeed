@@ -11,6 +11,7 @@
 import json
 import math
 import os
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ def init(data_dir: str, config_path: str | None = None) -> None:
     (_DATA / "digests").mkdir(parents=True, exist_ok=True)
     (_DATA / "feedback").mkdir(parents=True, exist_ok=True)
     (_DATA / "skills" / "history").mkdir(parents=True, exist_ok=True)
+    (_DATA / "trending").mkdir(parents=True, exist_ok=True)
     for name in ("tasks.json", "runs.json"):
         if not (_DATA / name).exists():
             _write(_DATA / name, {"seq": 0, "items": []})
@@ -323,6 +325,23 @@ def read_skills_board(board_type: str, period: str) -> dict | None:
 def save_skills_board(board_type: str, period: str, data: dict) -> None:
     with _lock:
         _write(_skills_board_path(board_type, period), data)
+
+
+def _trending_path(source: str, period: str, language: str) -> Path:
+    # 文件名安全化：语言可能含 + / 空格（如 C++、Jupyter Notebook）
+    safe_lang = re.sub(r"[^\w.-]", "_", language or "All")
+    return _DATA / "trending" / f"{source}_{period}_{safe_lang}.json"
+
+
+def read_trending(source: str, period: str, language: str) -> dict | None:
+    """读趋势榜磁盘快照；无则 None。趋势数据落盘后重启不丢、页面只读盘不穿透外部源。"""
+    with _lock:
+        return _read(_trending_path(source, period, language), None)
+
+
+def save_trending(source: str, period: str, language: str, data: dict) -> None:
+    with _lock:
+        _write(_trending_path(source, period, language), data)
 
 
 def archive_skills_history(date: str, data) -> None:

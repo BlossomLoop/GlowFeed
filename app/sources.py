@@ -265,37 +265,76 @@ fetch_ithome = _rss_source("https://www.ithome.com/rss/", "ithome")
 fetch_sspai = _rss_source("https://sspai.com/feed", "sspai")
 
 
-# GitHub 趋势榜：GitHub 无官方 trending API，用 OSSInsight（免 key，基于 GH Archive 事件算趋势分，
-# 本机直连可用）。**不作为任务来源**（英文仓库会被任务的中文关键词过滤光），改由独立「趋势」专页
-# 直接调用 github_trending_list()，拿到不经关键词过滤的干净榜单。
-_TREND_CACHE: dict = {}     # (api_period, language) -> rows；快照式：仅 force（重启/每日08:30）时真拉，平时读缓存
-_TREND_FETCHED: dict = {}   # (api_period, language) -> 真拉成功的 UTC 时间戳，供前端显示真实刷新时间
-_TREND_PERIODS = {"today": "past_24_hours", "week": "past_week", "month": "past_month"}
+# GitHub 趋势榜：双信源、用户可切换、**不作为任务来源**（英文仓库会被任务的中文关键词过滤光），
+# 由独立「趋势」专页直接调用 trending_list()，拿到不经关键词过滤的干净榜单。
+# - ossinsight：OSSInsight API（基于 GH Archive 事件算趋势分，富字段：score/forks/contributors）。
+# - github：抓 github.com/trending 网页（GitHub 官方趋势，国内抓网页偏慢/偶发超时，故带重试）。
+# 快照式：GET 只读磁盘快照（store），不穿透外部源；真抓只在 force（重启/每日08:30/管理员刷新）
+# 或磁盘未命中时按需补一次。按需抓取失败用内存负缓存做冷却，避免源宕机时被页面反复打。
+_TREND_SOURCES = ("ossinsight", "github")
+_TREND_PERIODS = {"today": "past_24_hours", "week": "past_week", "month": "past_month"}  # OSSInsight 周期
+_GH_TREND_SINCE = {"today": "daily", "week": "weekly", "month": "monthly"}               # trending 页周期
+_TREND_NEG_TTL = 300        # 按需抓取失败后的冷却秒数：期间不再重打同一 (source,period,language)
+_TREND_FAILED_AT: dict = {} # (source,period,language) -> 上次按需抓取失败的 time.time()
 
 
-def trending_fetched_at(period: str = "today", language: str = "All") -> str | None:
-    """返回该榜单快照的真实抓取时间（store.now() 格式 UTC 串）；从未拉过则 None。"""
-    return _TREND_FETCHED.get((_TREND_PERIODS.get(period, "past_24_hours"), language))
+def _trend_recently_failed(key) -> bool:
+    ts = _TREND_FAILED_AT.get(key)
+    return ts is not None and (time.time() - ts) < _TREND_NEG_TTL
 
 
-def github_trending_list(period: str = "today", language: str = "All",
-                         force: bool = False) -> list[dict]:
-    """拉 OSSInsight 趋势仓库，返回榜单视图用富结构。
+def trending_list(source: str = "ossinsight", period: str = "today",
+                  language: str = "All", force: bool = False) -> list[dict]:
+    """返回某信源的趋势榜（落盘快照）。
 
-    快照式缓存：有缓存就直接返回（不按时间过期），只有 force=True（重启预热 /
-    每日 08:30 定时刷新）才真正请求 OSSInsight。period: today/week/month；
-    language: All 或具体编程语言。失败/空返回 []（但若已有旧快照则保留旧的）。"""
+    GET（force=False）只读磁盘：命中即返回，不碰外部源；磁盘没有才按需补抓一次
+    （受负缓存冷却保护）。force=True（重启/定时/管理员刷新）总是真抓，成功落盘、
+    失败保留旧快照。source 非法回退 ossinsight。"""
+    source = source if source in _TREND_SOURCES else "ossinsight"
+    key = (source, period, language)
+    snap = store.read_trending(source, period, language)
+    if not force:
+        if snap is not None:
+            return snap.get("rows", [])                  # 只读盘快照，不穿透
+        if _trend_recently_failed(key):
+            return []                                    # 源刚抓失败，冷却期内不再打
+
+    rows = _fetch_trending(source, period, language)
+    if rows:
+        store.save_trending(source, period, language,
+                            {"rows": rows, "fetched_at": store.now()})
+        _TREND_FAILED_AT.pop(key, None)
+        return rows
+    _TREND_FAILED_AT[key] = time.time()                  # 记失败时刻供冷却
+    return snap.get("rows", []) if snap is not None else []  # 拉空 → 保留旧快照
+
+
+def trending_fetched_at(source: str = "ossinsight", period: str = "today",
+                        language: str = "All") -> str | None:
+    """该 (源/周期/语言) 快照的真实抓取时间（落盘里的 fetched_at）；从未拉过则 None。"""
+    snap = store.read_trending(source, period, language)
+    return snap.get("fetched_at") if snap else None
+
+
+def _fetch_trending(source: str, period: str, language: str) -> list[dict]:
+    """按信源真抓一次，返回统一行结构。失败/空返 []。"""
+    if source == "github":
+        return fetch_github_trending(period, language)
+    return fetch_ossinsight(period, language)
+
+
+def fetch_ossinsight(period: str, language: str = "All") -> list[dict]:
+    """OSSInsight 趋势 API → 统一行结构。失败/空返 []。"""
     api_period = _TREND_PERIODS.get(period, "past_24_hours")
-    key = (api_period, language)
-    hit = _TREND_CACHE.get(key)
-    if hit is not None and not force:
-        return hit
     url = (f"https://api.ossinsight.io/v1/trends/repos/"
            f"?period={api_period}&language={http_util.quote(language)}")
-    data = http_util.get_json(url, timeout=15)
-    rows = (data or {}).get("data", {}).get("rows", [])
+    return _parse_ossinsight(http_util.get_json(url, timeout=15))
+
+
+def _parse_ossinsight(data: dict) -> list[dict]:
+    """解析 OSSInsight 响应为统一行结构。纯函数。"""
     out = []
-    for r in rows:
+    for r in (data or {}).get("data", {}).get("rows", []):
         name = (r.get("repo_name") or "").strip()
         if not name:
             continue
@@ -313,22 +352,84 @@ def github_trending_list(period: str = "today", language: str = "All",
             "score": round(float(r.get("total_score") or 0), 1),
             "contributors": [c.strip() for c in contribs[:3]],
         })
-    if out:
-        _TREND_CACHE[key] = out
-        _TREND_FETCHED[key] = store.now()   # 记录本次真拉时刻，前端据此显示真实刷新时间
-    elif hit is not None:
-        return hit            # 这次拉空但有旧快照 → 保留旧的，别把榜单清空
     return out
 
 
-def warm_trending(periods=("today", "week", "month"), language: str = "All") -> None:
-    """强制刷新趋势快照。重启预热与每日 08:30 定时各调一次（force=True 真拉 OSSInsight）。"""
-    for p in periods:
-        try:
-            n = len(github_trending_list(p, language, force=True))
-            print(f"[trending] 刷新 {p}: {n} 条", flush=True)
-        except Exception as e:
-            print(f"[trending] 刷新 {p} 失败: {e}", flush=True)
+def fetch_github_trending(period: str, language: str = "All") -> list[dict]:
+    """抓 github.com/trending 网页 → 统一行结构。
+
+    period→since=daily/weekly/monthly；language 非 All 时走 /trending/{slug}（小写）。
+    国内抓网页偏慢/偶发超时，重试 2 次；via_proxy 直连失败再尝试本地代理。失败/空返 []。"""
+    since = _GH_TREND_SINCE.get(period, "daily")
+    path = "" if (not language or language == "All") else "/" + http_util.quote(language.lower())
+    url = f"https://github.com/trending{path}?since={since}"
+    for _ in range(2):
+        page = http_util.get(url, timeout=15, via_proxy=True)
+        if page:
+            rows = _parse_github_trending(page, language)
+            if rows:
+                return rows
+    return []
+
+
+def _parse_github_trending(page: str, language: str = "All") -> list[dict]:
+    """解析 github.com/trending 网页为统一行结构。纯函数（喂夹具可离线测）。
+
+    每个仓库一个 <article class="Box-row">：标题在 <h2 ...lh-condensed><a href="/owner/repo">，
+    语言/总 star/forks/当期新增 star 各有标记。当期新增 star 充当趋势分（score）。"""
+    out = []
+    for block in (page or "").split('class="Box-row"')[1:]:
+        m = re.search(r'<h2[^>]*lh-condensed[^>]*>\s*<a[^>]*\bhref="/([^"]+?)"', block, re.DOTALL)
+        if not m or m.group(1).strip("/").count("/") != 1:
+            continue
+        name = m.group(1).strip("/")
+        desc_m = re.search(r'<p[^>]*\bcol-9\b[^>]*>(.*?)</p>', block, re.DOTALL)
+        desc = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", desc_m.group(1))).strip() if desc_m else ""
+        lang_m = re.search(r'itemprop="programmingLanguage">([^<]+)<', block)
+        lang = lang_m.group(1).strip() if lang_m else ("" if language == "All" else language)
+        out.append({
+            "rank": len(out) + 1,
+            "name": name,
+            "url": f"https://github.com/{name}",
+            "language": html.unescape(lang),
+            "description": html.unescape(desc),
+            "stars": _gh_count(block, name, "stargazers"),
+            "forks": _gh_count(block, name, "forks"),
+            "score": _gh_period_stars(block),  # 当期新增 star 作趋势分
+            "contributors": [],
+        })
+    return out
+
+
+def _gh_count(block: str, name: str, kind: str) -> int:
+    """从 trending 区块里取 star/fork 总数（<a href=".../{kind}">…数字…</a>）。"""
+    # [^>]*> 先吃掉 <a> 标签自身剩余属性（含 class 如 tmp-mr-3，其数字会误判），再取锚内文本
+    m = re.search(r'href="/' + re.escape(name) + r'/' + kind + r'"[^>]*>(.*?)</a>',
+                  block, re.DOTALL)
+    if not m:
+        return 0
+    text = re.sub(r"<[^>]+>", " ", m.group(1))  # 剥掉 star 图标 svg，只留可见的数字文本
+    d = re.search(r'([\d,]+)', text)
+    return int(d.group(1).replace(",", "")) if d else 0
+
+
+def _gh_period_stars(block: str) -> int:
+    """取「N stars today / this week / this month」里的当期新增 star 数。"""
+    m = re.search(r'([\d,]+)\s+stars?\s+(?:today|this\s+week|this\s+month)', block)
+    return int(m.group(1).replace(",", "")) if m else 0
+
+
+def warm_trending(sources=_TREND_SOURCES, periods=("today", "week", "month"),
+                  language: str = "All") -> None:
+    """强制刷新趋势快照（force=True 真抓 + 落盘）。重启预热与每日 08:30 定时各调一次，
+    两个信源 × 三周期都预热。单个 (源/周期) 失败不影响其余。"""
+    for src in sources:
+        for p in periods:
+            try:
+                n = len(trending_list(src, p, language, force=True))
+                print(f"[trending] 刷新 {src}/{p}: {n} 条", flush=True)
+            except Exception as e:
+                print(f"[trending] 刷新 {src}/{p} 失败: {e}", flush=True)
 
 
 # ---------------- 注册表 ----------------

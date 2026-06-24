@@ -97,7 +97,10 @@
   <!-- ============ GitHub 趋势榜 ============ -->
   <section id="view-trending" class="view">
     <div class="toolbar">
-      <span class="trend-title mono">GitHub 趋势榜<span class="trend-sub">OSSInsight · 免 key</span></span>
+      <span class="trend-title mono">GitHub 趋势榜<span class="trend-sub" id="trendSub">OSSInsight · 免 key</span></span>
+      <div class="sort-toggle mono" id="trendSource">
+        <button class="sort-btn active" data-source="ossinsight">OSSInsight</button><button class="sort-btn" data-source="github">GitHub 官方</button>
+      </div>
       <div class="sort-toggle mono" id="trendPeriod">
         <button class="sort-btn active" data-period="today">今日</button><button class="sort-btn" data-period="week">本周</button><button class="sort-btn" data-period="month">本月</button>
       </div>

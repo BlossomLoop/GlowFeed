@@ -22,7 +22,7 @@ from pathlib import Path
 import time
 
 from . import digest, llm, pipeline, scheduler, skills_board, store
-from .sources import SOURCES, github_trending_list, trending_fetched_at
+from .sources import SOURCES, trending_fetched_at, trending_list
 
 WEB_DIR = Path(__file__).parent.parent / "web"
 
@@ -198,10 +198,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(store.list_runs(
                 task_id=q.get("task_id"),
                 limit=min(int(q.get("limit", 20)), 100)))
-        elif route == "/api/trending":          # GitHub 趋势榜（公开，独立专页用，不经任务关键词过滤）
+        elif route == "/api/trending":          # GitHub 趋势榜（公开只读快照，双信源可切换，不穿透外部源）
+            source = q.get("source") or "ossinsight"
             period, language = q.get("period", "today"), q.get("language") or "All"
-            self._json({"rows": github_trending_list(period, language),
-                        "fetched_at": trending_fetched_at(period, language)})
+            self._json({"rows": trending_list(source, period, language),
+                        "fetched_at": trending_fetched_at(source, period, language),
+                        "source": source})
         elif route == "/api/skills/board":       # 热门 Skill 榜（公开只读快照，不打外网）
             board_type = q.get("type", "hot")
             if board_type not in _SKILLS_BOARD_TYPES:
@@ -268,11 +270,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(snap if snap else {"empty": True})
             return
         if route == "/api/trending/refresh":
-            # 趋势榜强制刷新：force=True 真正重拉 OSSInsight（耗其配额），仅管理员可调
-            # （do_POST 开头已做 _authed() 校验）。公开 GET /api/trending 仍只读缓存快照。
+            # 趋势榜强制刷新：force=True 真抓指定信源并落盘，仅管理员可调
+            # （do_POST 开头已做 _authed() 校验）。公开 GET /api/trending 仍只读磁盘快照。
             b = self._body()
-            rows = github_trending_list(b.get("period", "today"),
-                                        b.get("language") or "All", force=True)
+            rows = trending_list(b.get("source") or "ossinsight",
+                                 b.get("period", "today"),
+                                 b.get("language") or "All", force=True)
             self._json(rows)
             return
         if route == "/api/skills/refresh":

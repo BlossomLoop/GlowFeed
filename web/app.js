@@ -8,6 +8,7 @@ const state = {
   sources: [],          // [{id,name,region,kind}]
   tasks: [],
   feedSort: "score",
+  trendSource: "ossinsight",
   trendPeriod: "today",
   pollTimer: null,
   authed: false,        // 是否已凭 token 进入管理态
@@ -671,13 +672,17 @@ $$("#view-feed .sort-btn").forEach((b) =>
 
 // ---------------- GitHub 趋势榜 ----------------
 async function loadTrending() {
+  const source = state.trendSource || "ossinsight";
   const period = state.trendPeriod || "today";
   const lang = $("#trendLang") ? $("#trendLang").value : "All";
   const body = $("#trendBody");
+  // 副标题随信源变（OSSInsight 趋势分 / GitHub 官方当期新增 star）
+  const subEl = $("#trendSub");
+  if (subEl) subEl.textContent = source === "github" ? "GitHub 官方 · 免 key" : "OSSInsight · 免 key";
   body.innerHTML = '<li class="trend-loading mono">正在拉取 GitHub 趋势…</li>';
   $("#trendEmpty").classList.add("hidden");
   try {
-    const data = await api(`/api/trending?period=${period}&language=${encodeURIComponent(lang)}`);
+    const data = await api(`/api/trending?source=${source}&period=${period}&language=${encodeURIComponent(lang)}`);
     const rows = data.rows || [];
     const periodLabel = period === "today" ? "今日" : period === "week" ? "本周" : "本月";
     // 刷新时间取后端真实抓取时刻（OSSInsight 快照），而非页面渲染时刻
@@ -700,7 +705,7 @@ async function loadTrending() {
             ${r.language ? `<span class="trend-lang">${esc(r.language)}</span>` : ""}
             <span class="trend-stars">★ ${fmtHeat(r.stars) || r.stars}</span>
             ${r.forks ? `<span class="trend-forks">⑂ ${fmtHeat(r.forks) || r.forks}</span>` : ""}
-            <span class="trend-score">趋势 ${r.score}</span>
+            ${r.score ? `<span class="trend-score">${source === "github" ? `${periodLabel}+${fmtHeat(r.score) || r.score}★` : `趋势 ${r.score}`}</span>` : ""}
             ${r.contributors && r.contributors.length ? `<span class="trend-by">by ${r.contributors.map(esc).join(", ")}</span>` : ""}
           </div>
         </div>
@@ -714,6 +719,13 @@ async function loadTrending() {
   }
 }
 
+$$("#trendSource .sort-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    $$("#trendSource .sort-btn").forEach((x) => x.classList.toggle("active", x === b));
+    state.trendSource = b.dataset.source;
+    loadTrending();
+  })
+);
 $$("#trendPeriod .sort-btn").forEach((b) =>
   b.addEventListener("click", () => {
     $$("#trendPeriod .sort-btn").forEach((x) => x.classList.toggle("active", x === b));
@@ -722,14 +734,18 @@ $$("#trendPeriod .sort-btn").forEach((b) =>
   })
 );
 $("#trendLang") && $("#trendLang").addEventListener("change", loadTrending);
-// 刷新 = 强制重拉 OSSInsight（管理员专属，走带 token 的 POST）；重拉后再读新缓存渲染
+// 刷新 = 强制重抓当前信源并落盘（管理员专属，走带 token 的 POST）；重抓后再读新快照渲染
 $("#btnTrendRefresh") && $("#btnTrendRefresh").addEventListener("click", async () => {
   const btn = $("#btnTrendRefresh");
   btn.disabled = true;
   try {
     await api("/api/trending/refresh", {
       method: "POST",
-      body: { period: state.trendPeriod || "today", language: $("#trendLang") ? $("#trendLang").value : "All" },
+      body: {
+        source: state.trendSource || "ossinsight",
+        period: state.trendPeriod || "today",
+        language: $("#trendLang") ? $("#trendLang").value : "All",
+      },
     });
     await loadTrending();
     toast("趋势榜已刷新");

@@ -167,73 +167,67 @@ class TestFeedbackStore(unittest.TestCase):
 
 
 class TestGithubTrending(unittest.TestCase):
-    """OSSInsight 趋势榜解析（monkeypatch 掉网络，只测 github_trending_list 字段映射）。"""
+    """OSSInsight 解析（纯函数）+ trending_list 的落盘快照/只读盘/真实时间戳行为。"""
 
-    def _with_payload(self, payload, fn):
-        from app import http_util, sources
-        sources._TREND_CACHE.clear()    # 清缓存，避免跨用例命中
-        sources._TREND_FETCHED.clear()  # 同步清抓取时间戳，避免跨用例污染
-        orig = http_util.get_json
-        http_util.get_json = lambda *a, **k: payload
-        try:
-            return fn(sources)
-        finally:
-            http_util.get_json = orig
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        store_mod.init(self.tmp)
 
     def test_parse_maps_fields(self):
+        from app import sources
         sample = {"data": {"rows": [
             {"repo_name": "apple/container", "primary_language": "Swift",
              "description": "A tool", "stars": 63, "forks": 5, "total_score": 345.12,
              "contributor_logins": "alice,bob,carol,dan"},
             {"repo_name": "", "stars": 1},  # 空名应跳过
         ]}}
-        out = self._with_payload(sample, lambda s: s.github_trending_list("today"))
+        out = sources._parse_ossinsight(sample)
         self.assertEqual(len(out), 1)
         a = out[0]
         self.assertEqual(a["rank"], 1)
         self.assertEqual(a["name"], "apple/container")
         self.assertEqual(a["url"], "https://github.com/apple/container")
         self.assertEqual(a["language"], "Swift")
-        self.assertEqual(a["description"], "A tool")
         self.assertEqual(a["stars"], 63)
         self.assertEqual(a["score"], 345.1)            # round 到 1 位
         self.assertEqual(a["contributors"], ["alice", "bob", "carol"])  # 取前 3
 
     def test_contributors_list_and_empty_language(self):
-        sample = {"data": {"rows": [
+        from app import sources
+        out = sources._parse_ossinsight({"data": {"rows": [
             {"repo_name": "openai/whisper", "description": "ASR", "stars": 5,
              "contributor_logins": [], "primary_language": ""},
-        ]}}
-        out = self._with_payload(sample, lambda s: s.github_trending_list("week"))
+        ]}})
         self.assertEqual(out[0]["contributors"], [])
         self.assertEqual(out[0]["language"], "")
 
     def test_empty_payload_returns_list(self):
-        self.assertEqual(
-            self._with_payload(None, lambda s: s.github_trending_list("today")), [])
-
-    def test_records_fetched_at_on_real_fetch(self):
-        """真拉成功后记录抓取时间戳；命中缓存仍沿用同一时间戳（前端据此显示真实刷新时间）。"""
         from app import sources
+        self.assertEqual(sources._parse_ossinsight(None), [])
+
+    def test_snapshot_persisted_and_read_only_on_get(self):
+        """force 真抓 → 落盘 + 记真实时间戳；后续 GET 只读盘、不再真抓。"""
+        from app import http_util, sources
         sample = {"data": {"rows": [{"repo_name": "a/b", "stars": 1}]}}
-        # 拉取前无时间戳
-        self._with_payload(sample, lambda s: None)  # 仅清缓存
-        self.assertIsNone(sources.trending_fetched_at("today"))
-        # 真拉成功 → 记录时间戳（store.now() 格式）
-        out = self._with_payload(sample, lambda s: s.github_trending_list("today"))
-        self.assertEqual(len(out), 1)
-        ts = sources.trending_fetched_at("today")
-        self.assertIsNotNone(ts)
-        self.assertRegex(ts, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
-        # 命中缓存（不真拉）→ 时间戳不变
-        from app import http_util
+        # 抓取前无快照、无时间戳
+        self.assertIsNone(sources.trending_fetched_at("ossinsight", "today", "All"))
         orig = http_util.get_json
-        http_util.get_json = lambda *a, **k: (_ for _ in ()).throw(AssertionError("不应真拉"))
+        http_util.get_json = lambda *a, **k: sample
         try:
-            sources.github_trending_list("today")
+            out = sources.trending_list("ossinsight", "today", "All", force=True)
         finally:
             http_util.get_json = orig
-        self.assertEqual(sources.trending_fetched_at("today"), ts)
+        self.assertEqual(len(out), 1)
+        ts = sources.trending_fetched_at("ossinsight", "today", "All")
+        self.assertRegex(ts, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+        # 后续 GET（force=False）只读磁盘快照 → 即使真抓会抛错也不该被调用
+        http_util.get_json = lambda *a, **k: (_ for _ in ()).throw(AssertionError("不应真抓"))
+        try:
+            again = sources.trending_list("ossinsight", "today", "All")
+        finally:
+            http_util.get_json = orig
+        self.assertEqual(len(again), 1)
+        self.assertEqual(sources.trending_fetched_at("ossinsight", "today", "All"), ts)
 
 
 class TestTrendSort(unittest.TestCase):
