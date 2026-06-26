@@ -12,7 +12,7 @@ from app.digest import _cluster, _keywords
 from app.llm import merge_keywords, _parse_keywords
 from app.pipeline import (dedupe, keyword_match, normalize_url, title_similarity,
                           excluded_match, score_item)
-from app.scheduler import compute_next_run
+from app.scheduler import compute_next_run, compute_prev_run
 
 
 class TestDedupe(unittest.TestCase):
@@ -71,6 +71,22 @@ class TestSchedule(unittest.TestCase):
         now = datetime(2026, 6, 13, 21, 0)
         nxt = compute_next_run("daily", ["08:00", "20:00"], now)
         self.assertEqual(nxt, datetime(2026, 6, 14, 8, 0))
+
+    def test_prev_daily_picks_passed_slot_today(self):
+        # 启动补跑用：now=10:00 时最近一次应触发是今天 08:00
+        now = datetime(2026, 6, 13, 10, 0)
+        prev = compute_prev_run("daily", ["08:00", "12:30", "20:00"], now)
+        self.assertEqual(prev, datetime(2026, 6, 13, 8, 0))
+
+    def test_prev_daily_rolls_to_yesterday(self):
+        # now 早于当日所有时刻 → 最近一次应触发落在昨天最后一个时刻
+        now = datetime(2026, 6, 13, 7, 0)
+        prev = compute_prev_run("daily", ["08:00", "20:00"], now)
+        self.assertEqual(prev, datetime(2026, 6, 12, 20, 0))
+
+    def test_prev_interval(self):
+        now = datetime(2026, 6, 13, 10, 0)
+        self.assertEqual(compute_prev_run("interval", 60, now), datetime(2026, 6, 13, 9, 0))
 
 
 class TestDigest(unittest.TestCase):
