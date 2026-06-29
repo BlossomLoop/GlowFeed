@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="Loop Engineering">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="0%" r="120%">
+      <stop offset="0%" stop-color="#0e1a12"/>
+      <stop offset="60%" stop-color="#0a0f0a"/>
+      <stop offset="100%" stop-color="#050706"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00ff66"/>
+      <stop offset="100%" stop-color="#0a7a3c"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <!-- 细网格 -->
+  <g stroke="#143024" stroke-width="1" opacity="0.5">
+    <path d="M0 80 H640 M0 160 H640 M0 240 H640 M0 320 H640"/>
+    <path d="M80 0 V400 M160 0 V400 M240 0 V400 M320 0 V400 M400 0 V400 M480 0 V400 M560 0 V400"/>
+  </g>
+
+  <!-- 递归循环主图：嵌套环 + 箭头 -->
+  <g transform="translate(320 200)" filter="url(#glow)" fill="none" stroke-linecap="round">
+    <circle r="118" stroke="#0a7a3c" stroke-width="2" stroke-dasharray="3 9" opacity="0.7"/>
+    <!-- 外环：开口 + 箭头，表示持续迭代 -->
+    <path d="M 92 -58 A 108 108 0 1 1 -58 -92" stroke="url(#ring)" stroke-width="9"/>
+    <path d="M -58 -92 l 26 -2 l -10 26 z" fill="#00ff66" stroke="none"/>
+    <!-- 内环：反向，表示验证/回环 -->
+    <path d="M -60 38 A 70 70 0 1 1 64 24" stroke="#16b85a" stroke-width="6" opacity="0.92"/>
+    <path d="M 64 24 l -22 -10 l 18 -18 z" fill="#16b85a" stroke="none"/>
+    <!-- 核心点：目标 -->
+    <circle r="9" fill="#00ff66" stroke="none"/>
+    <circle r="20" stroke="#00ff66" stroke-width="1.5" opacity="0.6"/>
+  </g>
+
+  <!-- 终端文本 -->
+  <g font-family="'JetBrains Mono','SF Mono',Menlo,monospace" fill="#00ff66">
+    <text x="40" y="58" font-size="13" fill="#0a7a3c" letter-spacing="3">~/glowfeed/blog</text>
+    <text x="40" y="350" font-size="15" opacity="0.92">while (!goal.done) { plan → act → verify → escalate }</text>
+    <text x="40" y="376" font-size="11" fill="#6f9c82" letter-spacing="2">LOOP ENGINEERING · state · budget · verifier · human-gate</text>
+  </g>
+
+  <rect x="1" y="1" width="638" height="398" fill="none" stroke="#1e5a3a" stroke-width="2"/>
+</svg>

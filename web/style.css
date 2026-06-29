@@ -826,6 +826,51 @@ body.guest .fb-btns { display: none; }
 .trend-by { color: var(--paper-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16em; }
 .trend-loading { list-style: none; color: var(--paper-dim); font-family: var(--mono); padding: 24px 4px; }
 
+/* ============ 博客（瀑布流） ============ */
+#view-blog .toolbar::before { content: "> blog"; font-family: var(--mono);
+  font-size: var(--fs-sm); color: var(--amber); text-shadow: var(--glow-text-sm); margin-right: 6px; }
+
+/* column-width 瀑布流：窄屏自动收成单列，无需额外媒体查询 */
+.blog-grid { column-width: 300px; column-gap: var(--sp-4); }
+.blog-card {
+  display: block; break-inside: avoid; margin: 0 0 var(--sp-4);
+  background: var(--panel-1); border: var(--bd); border-radius: var(--r-1);
+  overflow: hidden; text-decoration: none; color: inherit;
+  animation: fadeUp .4s ease both;
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.blog-card:hover { border-color: var(--line-bright);
+  box-shadow: var(--glow-box), var(--shadow-card); transform: translateY(-2px); }
+.blog-card:focus-visible { outline: none; box-shadow: var(--glow-focus); }
+
+.blog-cover-wrap { position: relative; width: 100%; aspect-ratio: 16 / 10;
+  overflow: hidden; border-bottom: var(--bd); background: var(--panel-2); }
+.blog-cover { width: 100%; height: 100%; object-fit: cover; display: block;
+  filter: saturate(.92) contrast(1.02); transition: transform .35s ease; }
+.blog-card:hover .blog-cover { transform: scale(1.04); }
+.blog-cover-wrap::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 55%, rgba(5,7,6,.5)),
+              radial-gradient(ellipse 80% 60% at 50% 0%, var(--amber-faint), transparent 70%); }
+/* 无封面时的占位：斜纹底 + 首字磷光大字 */
+.blog-cover-ph { display: flex; align-items: center; justify-content: center;
+  background: repeating-linear-gradient(135deg, var(--panel-2) 0 14px, var(--panel-1) 14px 28px); }
+.blog-cover-ph::before { content: attr(data-initial); font: 700 56px/1 var(--mono);
+  color: var(--amber-dim); text-shadow: var(--glow-text); opacity: .85; }
+
+.blog-body { padding: 14px 16px 16px; }
+.blog-title { font-family: var(--mono); font-weight: 700; font-size: var(--fs-title);
+  color: var(--paper); line-height: 1.45; margin: 0; transition: color .15s, text-shadow .15s;
+  overflow-wrap: anywhere; }
+.blog-card:hover .blog-title { color: var(--amber); text-shadow: var(--glow-text-sm); }
+.blog-desc { font-size: var(--fs-sm); color: var(--paper-dim); line-height: 1.65; margin: 8px 0 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.blog-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.blog-date { font-size: var(--fs-2xs); color: var(--paper-mute); letter-spacing: .08em; }
+.blog-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.blog-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--amber-dim);
+  border: 1px solid var(--amber-dim); border-radius: var(--r-0); padding: 1px 7px; letter-spacing: .06em; }
+.blog-tag::before { content: "#"; opacity: .6; }
+
 /* ---- 热门 Skill 榜 ---- */
 .skill-delta { color: var(--amber); }
 .skill-kind { color: var(--paper-mute); }

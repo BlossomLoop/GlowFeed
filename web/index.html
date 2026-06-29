@@ -36,6 +36,7 @@
         <button class="tab" data-view="feed">情报流</button>
         <button class="tab" data-view="trending">趋势</button>
         <button class="tab" data-view="skills">热门Skill</button>
+        <button class="tab" data-view="blog">博客</button>
         <button class="tab admin-only" data-view="tasks">任务</button>
         <button class="tab admin-only" data-view="runs">日志</button>
         <button class="tab admin-only" data-view="settings">设置</button>
@@ -129,6 +130,16 @@
     <div id="skillsMeta" class="feed-meta mono"></div>
     <ol id="skillsBody" class="trend-list"></ol>
     <div id="skillsEmpty" class="empty hidden"><p>暂无数据 — 点「重新生成」抓取（管理员）</p></div>
+  </section>
+
+  <!-- ============ 博客（瀑布流） ============ -->
+  <section id="view-blog" class="view">
+    <div class="toolbar">
+      <span class="trend-title mono">博客<span class="trend-sub">独立 HTML 长文 · 手写排版</span></span>
+    </div>
+    <div id="blogMeta" class="feed-meta mono"></div>
+    <div id="blogGrid" class="blog-grid"></div>
+    <div id="blogEmpty" class="empty hidden"><p>暂无博客 — 把一个完整 HTML 放进 web/blog/ 即自动展示</p></div>
   </section>
 
   <!-- ============ 任务管理 ============ -->

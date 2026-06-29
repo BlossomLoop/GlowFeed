@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- ↓↓↓ 列表元数据：GlowFeed 从这里自动提取 ↓↓↓ -->
+  <title>Loop Engineering：把 AI Agent 的「持续执行」纳入工程治理</title>
+  <meta name="date" content="2026-06-29">
+  <meta name="description" content="讲清 Loop Engineering 到底是什么、为什么要管它，再给一套能在 Claude Code 上从 L1 起步、照着就能做的落地方案。">
+  <meta name="tags" content="Loop Engineering, AI Agent, Claude Code, 工程治理">
+  <meta name="cover" content="loop-engineering-cover.svg">
+  <!-- ↑↑↑ 只有 title 必须；date 缺省用文件修改时间 ↑↑↑ -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg:#0a0f0a; --bg-2:#0e150e; --bg-3:#0c130c;
+      --green:#00ff66; --green-2:#9fe6b0; --green-dim:#0a7a3c; --green-mid:#16b85a;
+      --ink:#d6e2d6; --ink-dim:#9fc4a8; --mute:#6b8a6b; --line:#1d2a1d; --line-2:#16331f;
+      --warn:#e8d44a; --red:#ff6b6b;
+      --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0; padding:0; line-height:1.78; color:var(--ink); background:var(--bg);
+      font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+      background-image: radial-gradient(ellipse 70% 40% at 50% -8%, rgba(0,255,102,.07), transparent);
+    }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 0 1.25rem 5rem; }
+
+    /* ── Hero ── */
+    .hero { padding: 3.4rem 0 1.6rem; border-bottom: 1px solid var(--line); margin-bottom: 2.4rem; }
+    .kicker { font-family:var(--mono); font-size:.75rem; letter-spacing:.32em; color:var(--green-dim); text-transform:uppercase; }
+    h1 { color:var(--green); font-size:2.15rem; line-height:1.25; margin:.6rem 0 .8rem;
+         text-shadow:0 0 18px rgba(0,255,102,.25); letter-spacing:.01em; }
+    .lede { color:var(--ink-dim); font-size:1.06rem; line-height:1.85; margin:0 0 1.1rem; }
+    .meta { color:var(--mute); font-size:.82rem; font-family:var(--mono); letter-spacing:.04em; }
+    .meta .tag { color:var(--green-dim); }
+
+    /* ── TOC ── */
+    .toc { background:var(--bg-2); border:1px solid var(--line); border-left:2px solid var(--green-dim);
+           border-radius:8px; padding:1.1rem 1.4rem; margin:0 0 2.6rem; font-family:var(--mono); font-size:.86rem; }
+    .toc-h { color:var(--green-dim); letter-spacing:.18em; font-size:.72rem; text-transform:uppercase; margin-bottom:.7rem; }
+    .toc ol { margin:0; padding-left:1.4rem; columns:2; column-gap:2rem; }
+    .toc li { margin:.28rem 0; }
+    .toc a { color:var(--ink-dim); text-decoration:none; }
+    .toc a:hover { color:var(--green); }
+    @media (max-width:680px){ .toc ol{ columns:1; } h1{ font-size:1.7rem; } }
+
+    /* ── 结构 ── */
+    h2 { color:var(--green); font-size:1.5rem; margin:3rem 0 .5rem; line-height:1.3; scroll-margin-top:1rem; }
+    h2 .n { font-family:var(--mono); color:var(--green-dim); font-size:1.05rem; margin-right:.55rem; }
+    h3 { color:var(--green-2); font-size:1.12rem; margin:2rem 0 .4rem; }
+    p { margin:.85rem 0; }
+    a { color:var(--green); }
+    strong { color:var(--green-2); font-weight:700; }
+    ul, ol { padding-left:1.4rem; }
+    li { margin:.4rem 0; }
+    hr { border:none; border-top:1px dashed var(--line); margin:3rem 0; }
+    .sub { color:var(--mute); font-size:.92rem; }
+
+    code { background:rgba(0,255,102,.07); color:var(--green-2); padding:.12em .42em; border-radius:4px;
+           font-family:var(--mono); font-size:.88em; }
+    pre { background:var(--bg-2); border:1px solid var(--line); border-radius:8px; padding:1rem 1.15rem;
+          overflow-x:auto; line-height:1.65; position:relative; }
+    pre code { background:none; padding:0; color:var(--ink); font-size:.83rem; }
+    pre.term::before { content:"$"; color:var(--green-dim); position:absolute; left:.5rem; top:.95rem; font-family:var(--mono); }
+    pre.term { padding-left:1.8rem; }
+
+    /* ── 表格 ── */
+    table { width:100%; border-collapse:collapse; margin:1.3rem 0; font-size:.86rem; }
+    th, td { text-align:left; padding:.62rem .7rem; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--green-dim); font-family:var(--mono); font-size:.74rem; letter-spacing:.1em; text-transform:uppercase;
+         border-bottom:1px solid var(--line-2); }
+    tbody tr:hover { background:rgba(0,255,102,.03); }
+    td code { font-size:.82em; white-space:nowrap; }
+    .ok { color:var(--green); } .no { color:var(--red); } .ask { color:var(--warn); }
+
+    /* ── 标注块 ── */
+    .note { border:1px solid var(--line); border-left:3px solid var(--green-dim); background:var(--bg-3);
+            border-radius:6px; padding:.9rem 1.15rem; margin:1.4rem 0; font-size:.94rem; }
+    .note.warn { border-left-color:var(--warn); }
+    .note.warn .lbl { color:var(--warn); }
+    .note .lbl { display:block; font-family:var(--mono); font-size:.72rem; letter-spacing:.14em;
+                 text-transform:uppercase; color:var(--green-dim); margin-bottom:.35rem; }
+
+    /* ── 五支柱 ── */
+    .pillars { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.8rem; margin:1.6rem 0; }
+    .pillar { background:var(--bg-2); border:1px solid var(--line); border-radius:7px; padding:.95rem 1rem; }
+    .pillar h4 { margin:.1rem 0 .4rem; color:var(--green); font-size:.98rem; }
+    .pillar .f { font-family:var(--mono); font-size:.7rem; color:var(--green-dim); letter-spacing:.08em; }
+    .pillar p { margin:.35rem 0 0; font-size:.84rem; color:var(--ink-dim); line-height:1.6; }
+
+    /* ── 成熟度阶梯 ── */
+    .ladder { display:flex; flex-direction:column; gap:.7rem; margin:1.5rem 0; }
+    .rung { display:grid; grid-template-columns:64px 1fr; gap:1rem; align-items:start;
+            background:var(--bg-2); border:1px solid var(--line); border-radius:7px; padding:.85rem 1rem; }
+    .rung .lv { font-family:var(--mono); font-weight:700; font-size:1.15rem; color:var(--green);
+                text-shadow:0 0 12px rgba(0,255,102,.3); }
+    .rung .lv small { display:block; font-size:.62rem; font-weight:400; color:var(--mute); letter-spacing:.1em; margin-top:.2rem; }
+    .rung h4 { margin:0 0 .25rem; color:var(--green-2); font-size:1rem; }
+    .rung p { margin:.2rem 0; font-size:.86rem; color:var(--ink-dim); }
+
+    /* ── 步骤 ── */
+    .steps { counter-reset:step; list-style:none; padding:0; }
+    .steps > li { counter-increment:step; position:relative; padding:.2rem 0 1.1rem 2.6rem; }
+    .steps > li::before { content:counter(step); position:absolute; left:0; top:0;
+      width:1.8rem; height:1.8rem; border:1px solid var(--green-dim); border-radius:50%;
+      color:var(--green); font-family:var(--mono); font-size:.85rem; display:flex; align-items:center; justify-content:center; }
+
+    .checklist { list-style:none; padding:0; }
+    .checklist li { padding-left:1.7rem; position:relative; }
+    .checklist li::before { content:"▢"; position:absolute; left:0; color:var(--green-dim); font-family:var(--mono); }
+
+    .back { display:inline-block; margin-top:3.4rem; color:var(--mute); text-decoration:none;
+            font-family:var(--mono); font-size:.85rem; }
+    .back:hover { color:var(--green); }
+    .foot { margin-top:2.4rem; padding-top:1.4rem; border-top:1px dashed var(--line);
+            color:var(--mute); font-size:.8rem; font-family:var(--mono); line-height:1.8; }
+    .foot a { color:var(--green-dim); }
+  </style>
+</head>
+<body>
+<main class="wrap">
+
+  <header class="hero">
+    <div class="kicker">// AI Agent · 工程治理</div>
+    <h1>Loop Engineering：把 AI Agent 的「持续执行」纳入工程治理</h1>
+    <p class="lede">
+      让 Agent 自己盯着一个目标反复迭代、跑到做完，技术上早就不是问题。麻烦在后头：它一直在跑，
+      谁能保证它没乱改文件、没把活干砸、出了事能查到也能叫停？Loop Engineering 谈的就是这套配套设施——
+      状态、边界、验证、预算、审计，再加一个随时把活接回人手的开关。
+    </p>
+    <div class="meta">2026-06-29 · <span class="tag">#Loop Engineering #AI Agent #Claude Code #工程治理</span></div>
+  </header>
+
+  <nav class="toc">
+    <div class="toc-h">目录 · contents</div>
+    <ol>
+      <li><a href="#what">它到底是什么</a></li>
+      <li><a href="#why">为什么需要它</a></li>
+      <li><a href="#upstream">上游项目地图</a></li>
+      <li><a href="#pillars">六根支柱</a></li>
+      <li><a href="#ladder">L0–L3 成熟度</a></li>
+      <li><a href="#plan">落地方案：Daily Triage</a></li>
+      <li><a href="#perm">权限与安全边界</a></li>
+      <li><a href="#metrics">周度复盘指标</a></li>
+      <li><a href="#glowfeed">套用到本项目</a></li>
+      <li><a href="#checklist">验收清单</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================================================ -->
+  <h2 id="what"><span class="n">01</span>它到底是什么</h2>
+  <p>
+    上游项目把 loop 定义成一种“递归目标”：你给出目的，AI 借助状态、子代理、验证和外部系统持续迭代，
+    直到目标达成，或者它自己判断该把问题交还给人。这跟两件听起来很像的东西得分清楚。
+  </p>
+  <ul>
+    <li>它不是一次性的 prompt。单次问答没有跨轮次的状态，也没有“不满意就接着改”的收敛过程。</li>
+    <li>它也不是所谓的“自动研发系统”。重点恰恰不在放权让 Agent 自由发挥，而在反过来给它的持续执行套一层工程约束：状态、边界、验证、预算、审计，外加人工接管。</li>
+  </ul>
+  <p>
+    参考实现来自开源项目 <a href="https://github.com/cobusgreyling/loop-engineering/" target="_blank" rel="noopener"><code>cobusgreyling/loop-engineering</code></a>。
+    它<strong>不是一个单一运行时框架</strong>，而是一套参考体系：可复用的循环模式、按工具准备的起步模板、示例、技能与脚手架工具、以及一份生产安全边界文档。下文会逐一拆开。
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 id="why"><span class="n">02</span>为什么需要它</h2>
+  <p>
+    一个能自己跑很多轮、还能调工具、改文件、评论 PR 的 Agent，能干多少，就能闯多少祸。没有约束的自动循环，常见的翻车有几种：
+    每轮依据的输入都在变，结论跟着漂；High Priority 里堆着上周早解决的旧事，越积越多；为了让 CI 过，顺手改了不该碰的文件，还没人发现。
+    最糟的一种，是根本没人说得清它什么时候、用什么权限、动过哪些东西。
+  </p>
+  <p>
+    所以这套方法的取舍很明确：先把“看得见、管得住”做扎实，再来谈放开多少自动化。也就是说，重点不是让 Agent 更能干，
+    而是让它每跑一轮，结果都能验、能叫停、能回滚。
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 id="upstream"><span class="n">03</span>上游项目地图</h2>
+  <p>上游仓库由这几块构成，理解它们的分工，落地时才知道该抄哪一份：</p>
+  <table>
+    <thead><tr><th style="width:30%">目录</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><code>patterns/</code></td><td>7 个可复用 loop 模式，附机器可读注册表 <code>registry.yaml</code></td></tr>
+      <tr><td><code>starters/</code></td><td>按工具准备的起步模板：Claude Code、Codex、Grok</td></tr>
+      <tr><td><code>examples/</code></td><td>Claude Code / Codex / GitHub Actions 等运行示例</td></tr>
+      <tr><td><code>skills/</code> · <code>templates/</code></td><td>triage、budget、verifier、minimal-fix 等技能模板</td></tr>
+      <tr><td><code>tools/loop-init</code></td><td>脚手架：生成 starter、state、budget、run-log、skill</td></tr>
+      <tr><td><code>tools/loop-audit</code></td><td>readiness 评分工具（结构化准入信号，<strong>不是安全证明</strong>）</td></tr>
+      <tr><td><code>tools/loop-cost</code></td><td>token 成本估算</td></tr>
+      <tr><td><code>docs/safety.md</code></td><td>生产安全边界：denylist、MCP 最小权限、auto-merge 策略、事故响应</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7 个内置模式</h3>
+  <p class="sub">下表命令<strong>仅用于识别模式</strong>，不可直接复制到生产——真实命令必须带上 state 文件、禁止项、预算、Human Gate 和运行日志要求。</p>
+  <table>
+    <thead><tr><th>Pattern</th><th>起步</th><th>风险</th><th>一句话</th></tr></thead>
+    <tbody>
+      <tr><td><code>daily-triage</code></td><td>L1</td><td class="ok">low</td><td>每天巡检 CI / issue / PR，只产出报告</td></tr>
+      <tr><td><code>pr-babysitter</code></td><td>L1</td><td class="ask">medium</td><td>盯 PR 评审，<strong>不自动合并</strong></td></tr>
+      <tr><td><code>ci-sweeper</code></td><td>L2</td><td class="ask">medium</td><td>清扫 CI 失败，最多重试 3 次</td></tr>
+      <tr><td><code>dependency-sweeper</code></td><td>L2</td><td class="ask">medium</td><td>仅 patch 级依赖修复 + verifier 把关</td></tr>
+      <tr><td><code>post-merge-cleanup</code></td><td>L1</td><td class="ok">low</td><td>合并后扫尾，L2 后才做小修</td></tr>
+      <tr><td><code>changelog-drafter</code></td><td>L1</td><td class="ok">low</td><td>起草 changelog，发布前人工过</td></tr>
+      <tr><td><code>issue-triage</code></td><td>L1</td><td class="ok">low</td><td>给 issue 分诊，只提建议</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="pillars"><span class="n">04</span>六根支柱</h2>
+  <p>不管用哪个模式、哪个工具，一个能用的 loop 都得把下面六件事落到实实在在的文件和配置里。光在 Markdown 里写规则不算数，它拦不住任何东西；成熟度越高，越要把规则落到权限、凭据和 hook 这些真能生效的地方。</p>
+  <div class="pillars">
+    <div class="pillar"><div class="f">STATE.md</div><h4>状态</h4><p>循环的脊柱：每轮运行前读、运行后更新；并 prune 已解决项，防噪声堆积。</p></div>
+    <div class="pillar"><div class="f">LOOP.md · denylist</div><h4>边界</h4><p>cadence、范围、Human Gates、禁改路径、停止条件，写清“它不能碰什么”。</p></div>
+    <div class="pillar"><div class="f">loop-verifier.md</div><h4>验证</h4><p>maker/checker 分离的独立审查者，默认拒绝，证据不足即 ESCALATE。</p></div>
+    <div class="pillar"><div class="f">loop-budget.md</div><h4>预算</h4><p>每日 token / 运行次数 / 子代理上限 + kill switch + 恢复条件。</p></div>
+    <div class="pillar"><div class="f">loop-run-log.md</div><h4>审计</h4><p>append-only 运行日志：输入快照、动作、升级、token、verdict、脱敏声明。</p></div>
+    <div class="pillar"><div class="f">Human Gate</div><h4>人工接管</h4><p>安全 / 认证 / 支付 / PII / 基建 / 依赖升级一律停下来交还人类。</p></div>
+  </div>
+
+  <div class="note">
+    <span class="lbl">关于 verifier</span>
+    上游 verifier 模板的核心原则是<strong>“checker 默认拒绝，除非证据充分”</strong>。它要检查：scope（只改相关文件、无 denylist 路径）、intent（变更确实解决原目标）、tests（真的跑了，或说明为什么没跑）、no-cheating（没禁用测试、跳断言、注释掉检查）、risk（中高风险即便测试通过也建议人工 review）。
+    输出只能是 <code>APPROVE</code> / <code>REJECT</code> / <code>ESCALATE_HUMAN</code> 三选一；<strong>没有测试证据时必须 ESCALATE</strong>。LLM review 只是语义补充，测试、lint、typecheck、diff scope 才是主要证据。
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="ladder"><span class="n">05</span>L0–L3 成熟度阶梯</h2>
+  <p>别一上来就想着无人值守。成熟度得一级一级解锁，每级都有准入条件和“达不到就别往上走”的红线。<code>loop-audit</code> 的分数只是参考信号之一，不是唯一门槛，而且真实运行记录还得人工核一遍。</p>
+  <div class="ladder">
+    <div class="rung"><div class="lv">L0<small>DRAFT</small></div><div>
+      <h4>只有意图，没有执行</h4>
+      <p>有 <code>LOOP.md</code> 初稿、目标与非目标清楚。禁止：自动运行、自动改码、自动调外部写接口。</p></div></div>
+    <div class="rung"><div class="lv">L1<small>REPORT-ONLY</small></div><div>
+      <h4>只读分析，更新状态和报告</h4>
+      <p>准入：<code>STATE.md</code>、triage skill、<code>LOOP.md</code>（cadence/范围/Human Gates）、<code>loop-budget.md</code> 都到位。<code>loop-audit</code> 建议 <code>score ≥ 38</code>。</p>
+      <p>升 L2 指标：连续 1–2 周稳定、误报率 &lt; 30%、人工修正次数下降、至少一次结果被人读过并修正。</p></div></div>
+    <div class="rung"><div class="lv">L2<small>ASSISTED</small></div><div>
+      <h4>小范围自动修复，但必过 verifier + 人工确认</h4>
+      <p>准入：L1 稳定、有 <code>loop-verifier.md</code> 与 <code>minimal-fix</code> 类 action skill、改动在隔离 worktree 内、有明确测试命令与回滚策略。<code>score ≥ 58</code>。</p>
+      <p>允许：文档修复、单文件低风险 bugfix、补测试、lint/format、patch 级依赖（须审 lockfile diff）。禁止：自动 merge / push 主干、改 auth/payments/PII/infra/migrations、禁用测试、为过 CI 扩大范围。</p></div></div>
+    <div class="rung"><div class="lv">L3<small>UNATTENDED</small></div><div>
+      <h4>无人值守——仅限极低风险 + 强约束 + 高可观测</h4>
+      <p>准入须全满足：L2 稳定运行过一个周期、独立 worktree/runner、仅非主干分支、最小权限 token、网络 allowlist、MCP 只开必要工具、单实例锁、硬性 token/时间/子代理上限、完整日志、失败告警可达、kill switch 已验证、回滚 playbook 已演练。<code>score ≥ 78</code>，且默认<strong>禁止自动 merge / release</strong>。</p></div></div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="plan"><span class="n">06</span>落地方案：在 Claude Code 上跑通第一个 Loop</h2>
+  <p>
+    最稳的起点是 Daily Triage：风险低、产出是一份报告、误报率也好观察。下面这条路径可以直接照着做，走的是上游 Claude Code starter 的主线，而不是自己再包一层 <code>/loop-run</code>。
+  </p>
+
+  <h3>第一步：目录结构</h3>
+  <pre><code>.
+├── CLAUDE.md            # 项目级行为入口：规则、命令、验证要求、权限
+├── LOOP.md              # 循环配置：cadence、模式、Human Gates、MCP、预算
+├── STATE.md             # 状态脊柱：每轮前读、后更新
+├── loop-budget.md       # token / 频率 / 子代理上限 / kill switch
+├── loop-run-log.md      # append-only 运行日志
+├── .claude/
+│   ├── skills/
+│   │   ├── loop-triage/SKILL.md
+│   │   └── loop-budget/SKILL.md
+│   └── agents/
+│       └── loop-verifier.md     # 独立 checker，L2 及以上用
+└── docs/
+    └── safety.md        # denylist / auto-merge 策略 / MCP scopes / 事故响应</code></pre>
+
+  <h3>第二步：脚手架与体检</h3>
+  <pre class="term"><code>npx @cobusgreyling/loop-init . --pattern daily-triage --tool claude
+npx @cobusgreyling/loop-cost  --pattern daily-triage --level L1 --cadence 1d
+npx @cobusgreyling/loop-audit . --suggest</code></pre>
+  <div class="note warn">
+    <span class="lbl">务必手动补 safety.md</span>
+    <code>docs/safety.md</code> <strong>不会</strong>由 <code>loop-init</code> 自动生成。必须从上游 <code>docs/safety.md</code> 复制后项目化，或手工写一份等价的安全文档——否则首轮就该停下来。无法联网执行 <code>npx</code> 时，可直接从本地 <code>starters/minimal-loop-claude/</code> 和 <code>templates/</code> 复制。
+  </div>
+
+  <h3>第三步：第一周只报告（Report-only）</h3>
+  <p>上游 Quickstart 明确建议：<strong>第一周不 auto-fix、不 auto-merge，只产出报告</strong>。下面是可直接粘贴的企业版首轮指令，把禁止项写死：</p>
+  <pre><code>/loop 1d Run $loop-triage.
+
+Before acting:
+- Read CLAUDE.md, LOOP.md, STATE.md, loop-budget.md, loop-run-log.md and docs/safety.md.
+- Confirm this is L1 report-only.
+- Confirm no write action is allowed except updating STATE.md and appending loop-run-log.md.
+- Confirm docs/safety.md exists. If missing, stop and ask the human to create it.
+
+Scope:
+- Review recent CI failures, open PRs, open issues and recent commits.
+- Use only read-only access.
+- Redact secrets, customer data, full environment variables and production payloads.
+- Prune or archive resolved / merged / closed / stale items from STATE.md with a short reason.
+
+Output:
+- Update STATE.md: High Priority, Watch List, Noise, State Updates.
+- Append one run entry to loop-run-log.md with input snapshot, branch, commit SHA, outcome, escalation count.
+- Escalate anything ambiguous, or touching security / auth / payments / billing / PII / infra / dependency / production risk.
+
+Forbidden:
+- Do not edit code, create branches, commit, push, merge, close issues, change labels,
+  install or upgrade packages, call production APIs, or read/write secrets.</code></pre>
+
+  <h3>第四步：达到 L1 完成标准</h3>
+  <p>“跑起来”不等于完成。L1 收敛要满足：</p>
+  <ul>
+    <li><code>STATE.md</code> 每轮被读取，并更新 <code>Last run</code> / High Priority / Watch List / Noise / Pruned Items。</li>
+    <li><code>loop-run-log.md</code> 有非模板的真实 run entry（run id、pattern、level、branch、commit SHA、输入快照、actions、escalations、token 估算、outcome、redaction）。</li>
+    <li>无代码改动、无外部写操作；报告质量连续 1–2 周稳定；误报率可接受（建议 &lt; 30%）。</li>
+    <li><strong>至少一次 report-only 输出被人真正读过并修正过</strong>——不能只看审计器里的 <code>Last run</code> 字段。</li>
+  </ul>
+
+  <h3>第五步：升级到 L2 的执行协议</h3>
+  <p>Claude starter 默认只给 triage + verifier，<strong>不会自动装 minimal-fix</strong>。升 L2 前要：</p>
+  <ol class="steps">
+    <li>从 <code>templates/SKILL.md.minimal-fix</code> 建 <code>.claude/skills/minimal-fix/SKILL.md</code>，写入项目测试命令、denylist 和允许修改范围。</li>
+    <li>在 <code>LOOP.md</code> 声明：L2 只处理 High Priority 里的低风险小项。</li>
+    <li>每次 implementer 任务给定固定输入：original target、allowed file scope、denied paths、baseline（分支 / SHA / <code>git status</code> / 基线测试结果）、max attempts（2–3 次）、required tests。</li>
+    <li>完成后把 diff 摘要、实际变更文件、测试命令与输出、未执行验证及原因、回滚方式交给 verifier。</li>
+    <li>Verifier 只输出 <code>APPROVE</code> / <code>REJECT</code> / <code>ESCALATE_HUMAN</code>；无测试证据必须 <code>ESCALATE_HUMAN</code>，人工确认后才提交。</li>
+  </ol>
+
+  <!-- ============================================================ -->
+  <h2 id="perm"><span class="n">07</span>权限与安全边界</h2>
+  <p>这是把“规则”变成“边界”的地方。建议把高风险命令直接配成 <code>ask</code> 或 <code>deny</code>。</p>
+  <table>
+    <thead><tr><th>能力</th><th>L1</th><th>L2</th><th>L3</th></tr></thead>
+    <tbody>
+      <tr><td>读取代码</td><td class="ok">allow</td><td class="ok">allow</td><td class="ok">allow</td></tr>
+      <tr><td>修改代码</td><td class="no">deny</td><td class="ask">ask / 仅 worktree</td><td class="ask">allowlist only</td></tr>
+      <tr><td><code>git commit</code></td><td class="no">deny</td><td class="ask">ask</td><td class="ask">allowlist only</td></tr>
+      <tr><td><code>git push</code></td><td class="no">deny</td><td class="ask">ask</td><td class="no">保护分支 deny</td></tr>
+      <tr><td>merge / release</td><td class="no">deny</td><td class="no">deny</td><td class="no">默认 deny</td></tr>
+      <tr><td>PR 评论 / 改标签</td><td class="no">deny</td><td class="ask">ask</td><td class="ask">allowlist only</td></tr>
+      <tr><td>包安装 / 升级</td><td class="no">deny</td><td class="ask">ask</td><td class="ask">仅 patch allowlist</td></tr>
+      <tr><td>生产 API / 数据库写</td><td class="no">deny</td><td class="no">deny</td><td class="no">deny</td></tr>
+      <tr><td>secrets / env 文件</td><td class="no">deny</td><td class="no">deny</td><td class="no">deny</td></tr>
+      <tr><td>MCP 工具</td><td class="ok">read-only</td><td class="ask">least privilege</td><td class="ask">least privilege + audit</td></tr>
+    </tbody>
+  </table>
+
+  <h3>禁改 denylist（参考 docs/safety.md）</h3>
+  <pre><code>.env            .env.*           **/secrets/**     **/credentials/**
+**/*_key*       **/*_secret*     .terraform/**     k8s/production/**
+**/migrations/** auth/**          payments/**       billing/**
+# 建议追加
+**/prod/**      **/production/**  **/rbac/**        **/iam/**
+**/policy/**    **/customer-data/**</code></pre>
+  <div class="note warn">
+    <span class="lbl">触发以下情形必须 Human Gate</span>
+    安全 / 认证 / 授权；支付 / 计费 / PII；生产基建；依赖升级（尤其 major 或高危 CVE）；改动超过 ~10 个文件；同一事项第三次失败；疑似 prompt injection 或恶意仓库内容；第三方 MCP/plugin 信任不明；日志或状态可能泄露敏感信息。
+  </div>
+
+  <h3>回滚与事故响应</h3>
+  <p>任何 L2/L3 变更前记录：当前分支、commit SHA、<code>git status</code>、变更目标、允许范围、基线测试结果；变更后保留：diff 摘要、测试结果、verifier verdict、回滚方式（依赖升级再加 package/lockfile diff 与 downgrade 路径）。一旦合入坏代码：<strong>立即拉 kill switch → 暂停调度 → revert → 记事故到 run-log → 收紧 scope/denylist/verifier/预算后再恢复</strong>。</p>
+
+  <!-- ============================================================ -->
+  <h2 id="metrics"><span class="n">08</span>周度复盘指标</h2>
+  <p>L1 升 L2 前必须有至少一轮周度复盘记录。每周盯这几条：</p>
+  <table>
+    <thead><tr><th>指标</th><th>阈值 / 目标</th></tr></thead>
+    <tbody>
+      <tr><td>False positives（误报率）</td><td><code>&lt; 30%</code></td></tr>
+      <tr><td>False negatives（漏报）</td><td>趋势下降</td></tr>
+      <tr><td>Auto-fixes proposed</td><td>L1 必须为 <code>0</code></td></tr>
+      <tr><td>Rollbacks</td><td>L1 必须为 <code>0</code></td></tr>
+      <tr><td>Human escalations</td><td>有明确 owner</td></tr>
+      <tr><td>Token spend estimate</td><td>不超过 budget</td></tr>
+      <tr><td>Mean time to human awareness</td><td>趋势下降</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="glowfeed"><span class="n">09</span>套用到本项目（GlowFeed）</h2>
+  <p>
+    把方法论落到手边的系统才算真落地。GlowFeed 本身是个有调度器、多信源抓取的服务，
+    天然适合一个 <strong>L1 report-only 的 daily-triage</strong>，目标是<em>巡检抓取健康度</em>而非改任何代码：
+  </p>
+  <ul>
+    <li><strong>目的</strong>：每天读 <code>data/</code> 下的运行记录与 <code>/api/runs</code>，盯三件事——是否有任务当天抓取为 0、各信源失败/超时率、入库增量是否异常掉零。</li>
+    <li><strong>状态</strong>：一份 <code>STATE.md</code> 记 High Priority（如“微博源连续 2 天 0 抓取”）、Watch List、Noise；每轮 prune 已恢复的源。</li>
+    <li><strong>边界</strong>：只读 <code>data/</code> 与本地 API，<strong>禁止</strong>改 <code>app/</code>、改 <code>config.json</code>、动 <code>admin_token</code>、调外部源的写操作。</li>
+    <li><strong>预算</strong>：每日 1 次、token 上限给足余量、L1 子代理数为 0。</li>
+    <li><strong>人工接管</strong>：发现疑似信源被封、或 token/密钥相关异常，直接升级，不自行处置。</li>
+  </ul>
+  <p class="sub">
+    它跟现有的“调度器启动补跑错过的计划任务”正好互补：调度器保证任务在跑，这个 loop 负责让人知道任务跑得好不好、并留下记录。等连续两周稳定、误报率也降到能接受了，再考虑要不要升到 L2，做点像“给失效信源自动打个标记”这种极小的修复，而且照样得过 verifier。
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 id="checklist"><span class="n">10</span>落地验收清单</h2>
+  <ul class="checklist">
+    <li>已基于 <code>loop-init --tool claude</code> 或等价结构准备 <code>.claude/skills</code> 与 <code>loop-verifier.md</code>。</li>
+    <li><code>CLAUDE.md</code> 含/引用 loop 规则；<code>LOOP.md</code> 定义 cadence、scope、Human Gates、worktree、MCP、budget。</li>
+    <li><code>STATE.md</code> 有明确 schema；<code>loop-budget.md</code> 有每日 cap、子代理上限、kill switch。</li>
+    <li><code>loop-run-log.md</code> 有输入快照与审计字段；<code>docs/safety.md</code> 已手工创建/项目化。</li>
+    <li>L1 明确禁止代码修改与外部写；L2 明确 minimal-fix、worktree、verifier、人工确认；L3 明确硬权限、网络 allowlist、单实例锁、告警与回滚。</li>
+    <li>敏感信息治理明确（脱敏 / gitignore / 受控系统）；外部凭据最小权限；Runtime Profile 已定义身份、凭据、权限、日志、通知与暂停方式。</li>
+    <li><code>loop-audit . --suggest</code> 主要问题已处理或记录例外，且 activity 已人工核验；周度 metrics 面板已建立。</li>
+  </ul>
+
+  <hr>
+  <p>
+    说到底，Loop Engineering 的意义不在给 Agent 更多权限，而在把它的持续执行管起来。状态、权限、验证、预算、审计、回滚这几样都闭环了，loop 才算从“提示词自动化”变成一条能放心交付的工程流程。想动手的话，从 <code>daily-triage</code> 的 L1 report-only 开始就够了。
+  </p>
+
+  <div class="foot">
+    参考：<a href="https://github.com/cobusgreyling/loop-engineering/" target="_blank" rel="noopener">github.com/cobusgreyling/loop-engineering</a>
+    （patterns / starters / examples / skills / templates / tools/loop-init·audit·cost / docs/safety.md）·
+    本文结合《基于 Claude Code 落地 Loop Engineering 的实施指南》整理，以上游源码为事实依据。
+  </div>
+
+  <a class="back" href="/#blog">← 返回 GlowFeed · 博客</a>
+</main>
+</body>
+</html>

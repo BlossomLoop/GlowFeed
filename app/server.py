@@ -21,7 +21,7 @@ from pathlib import Path
 
 import time
 
-from . import digest, llm, pipeline, scheduler, skills_board, store
+from . import blog, digest, llm, pipeline, scheduler, skills_board, store
 from .sources import SOURCES, trending_fetched_at, trending_list
 
 WEB_DIR = Path(__file__).parent.parent / "web"
@@ -204,6 +204,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"rows": trending_list(source, period, language),
                         "fetched_at": trending_fetched_at(source, period, language),
                         "source": source})
+        elif route == "/api/blog/list":          # 博客列表（公开只读，实时扫描 web/blog/，零落盘）
+            self._json(blog.list_posts())
         elif route == "/api/skills/board":       # 热门 Skill 榜（公开只读快照，不打外网）
             board_type = q.get("type", "hot")
             if board_type not in _SKILLS_BOARD_TYPES:

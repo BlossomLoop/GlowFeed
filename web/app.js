@@ -140,6 +140,7 @@ function switchView(view) {
   if (view === "feed") loadFeed();
   if (view === "trending") loadTrending();
   if (view === "skills") loadSkills();
+  if (view === "blog") loadBlog();
   if (view === "runs") loadRuns();
   if (view === "tasks") renderTaskList();
   if (view === "settings") loadSettings();
@@ -858,6 +859,7 @@ function initCmdk() {
     { label: "新建侦听任务",         hint: "new",      kw: ["new", "新建", "task", "任务"],     act: () => { switchView("tasks"); fillForm(null); $("#fName").focus(); } },
     { label: "跳转 · 简报",          hint: "digest",   kw: ["go", "digest", "简报"],            act: () => switchView("digest") },
     { label: "跳转 · 情报流",        hint: "feed",     kw: ["go", "feed", "情报"],              act: () => switchView("feed") },
+    { label: "跳转 · 博客",          hint: "blog",     kw: ["go", "blog", "博客"],              act: () => switchView("blog") },
     { label: "跳转 · 任务",          hint: "tasks",    kw: ["go", "tasks", "任务"],             act: () => switchView("tasks") },
     { label: "跳转 · 日志",          hint: "runs",     kw: ["go", "runs", "日志"],              act: () => switchView("runs") },
     { label: "跳转 · 设置",          hint: "settings", kw: ["go", "settings", "设置"],          act: () => switchView("settings") },
@@ -1124,3 +1126,44 @@ $$("#skillsType .sort-btn").forEach((b) =>
   })
 );
 $("#btnSkillsRefresh") && $("#btnSkillsRefresh").addEventListener("click", refreshSkills);
+
+// ---------------- 博客（瀑布流）----------------
+// 列表来自后端实时扫描 web/blog/ 的每篇 HTML 头部元数据；点卡片整体跳转到独立 HTML 长文。
+async function loadBlog() {
+  const grid = $("#blogGrid");
+  const empty = $("#blogEmpty");
+  const meta = $("#blogMeta");
+  if (!grid) return;
+  try {
+    const posts = await api("/api/blog/list");
+    if (meta) meta.textContent = posts.length ? `共 ${posts.length} 篇 · 点封面进入全文` : "";
+    empty.classList.toggle("hidden", posts.length > 0);
+    if (!posts.length) { grid.innerHTML = ""; return; }
+    grid.innerHTML = posts
+      .map((p, i) => {
+        const cover = p.cover
+          ? `<img class="blog-cover" src="${esc(p.cover)}" alt="${esc(p.title)} 封面" loading="lazy">`
+          : `<div class="blog-cover blog-cover-ph" data-initial="${esc((p.title || "·").slice(0, 1))}"></div>`;
+        const tags = (p.tags || [])
+          .map((t) => `<span class="blog-tag">${esc(t)}</span>`)
+          .join("");
+        // 整张卡片（含封面）即链接，点击进入博客 HTML 全文页
+        return `<a class="blog-card" href="${esc(p.url)}" style="animation-delay:${Math.min(i * 40, 400)}ms">
+          <div class="blog-cover-wrap">${cover}</div>
+          <div class="blog-body">
+            <h3 class="blog-title">${esc(p.title)}</h3>
+            ${p.description ? `<p class="blog-desc">${esc(p.description)}</p>` : ""}
+            <div class="blog-foot mono">
+              <span class="blog-date">${esc(p.date)}</span>
+              ${tags ? `<span class="blog-tags">${tags}</span>` : ""}
+            </div>
+          </div>
+        </a>`;
+      })
+      .join("");
+  } catch (err) {
+    grid.innerHTML = "";
+    empty.classList.remove("hidden");
+    empty.innerHTML = `<p>加载失败：${esc(err.message)}</p>`;
+  }
+}
